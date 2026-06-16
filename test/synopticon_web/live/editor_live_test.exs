@@ -23,6 +23,22 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert render(existing) =~ "saved text"
   end
 
+  test "unauthenticated textarea is readonly", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/")
+
+    assert html =~ "<textarea"
+    assert html =~ ~s(readonly="readonly")
+  end
+
+  test "authenticated textarea is editable", %{conn: conn} do
+    conn = Plug.Test.init_test_session(conn, authenticated: true)
+
+    {:ok, _view, html} = live(conn, ~p"/")
+
+    assert html =~ "<textarea"
+    refute html =~ ~s(readonly="readonly")
+  end
+
   test "authenticated edits persist only for current path and update matching viewers", %{
     conn: conn
   } do

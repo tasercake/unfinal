@@ -59,6 +59,7 @@ defmodule SynopticonWeb.EditorLive do
       <textarea
         :if={!@authenticated}
         name="content"
+        readonly="readonly"
         style="flex: 1; width: 100%; resize: none; border: 0; padding: 8px;"
       ><%= @content %></textarea>
 
