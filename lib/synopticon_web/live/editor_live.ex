@@ -52,7 +52,7 @@ defmodule SynopticonWeb.EditorLive do
   def render(assigns) do
     ~H"""
     <div class="h-dvh min-h-dvh overflow-hidden bg-stone-50 text-center text-stone-950 [font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
-      <main class="mx-auto flex h-full min-h-0 w-full max-w-[52rem] flex-col gap-4 px-3 py-4 sm:px-8 sm:py-6 md:px-16 lg:px-24">
+      <main class="mx-auto flex h-full min-h-0 w-full max-w-[52rem] flex-col gap-4 py-4 sm:py-6">
         <header class="shrink-0 border-b border-stone-200 pb-4">
           <h1 class="text-3xl font-semibold tracking-tight">Synopticon</h1>
         </header>
