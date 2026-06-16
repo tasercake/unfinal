@@ -17,6 +17,18 @@ quote_env() {
   printf '"%s"' "${value//\"/\\\"}"
 }
 
+append_env_if_missing() {
+  local key=$1
+  local value=$2
+
+  if sudo grep -Eq "^${key}=" "${ENV_FILE}"; then
+    log "preserve existing ${key} in ${ENV_FILE}"
+  else
+    printf '%s=%s\n' "${key}" "$(quote_env "${value}")" | sudo tee -a "${ENV_FILE}" >/dev/null
+    log "added ${key} to ${ENV_FILE}"
+  fi
+}
+
 SERVICE_NAME=${SERVICE_NAME:-synopticon}
 APP_DIR=${APP_DIR:-$(pwd -P)}
 PHX_HOST=${PHX_HOST:-$(hostname).exe.xyz}
@@ -48,38 +60,31 @@ cd "${APP_DIR}"
 log "ensure env file ${ENV_FILE}"
 sudo install -d -m 0750 -o root -g root "${ENV_DIR}"
 
-existing_secret=""
-if sudo test -f "${ENV_FILE}"; then
-  existing_secret=$(sudo sed -n 's/^SECRET_KEY_BASE=//p' "${ENV_FILE}" | head -n 1)
-  existing_secret=${existing_secret%\"}
-  existing_secret=${existing_secret#\"}
-fi
-
-if [[ -z "${existing_secret}" ]]; then
-  if command -v openssl >/dev/null 2>&1; then
-    existing_secret=$(openssl rand -base64 64 | tr -d '\n')
-  else
-    existing_secret=$(mix phx.gen.secret)
-  fi
-fi
-
-tmp_env=$(mktemp)
-cat >"${tmp_env}" <<EOF_ENV
-MIX_ENV="prod"
-PHX_SERVER="true"
-PHX_HOST=$(quote_env "${PHX_HOST}")
-PORT=$(quote_env "${PORT}")
-SYNOPTICON_DATA_DIR=$(quote_env "${SYNOPTICON_DATA_DIR}")
-SECRET_KEY_BASE=$(quote_env "${existing_secret}")
-EOF_ENV
-
-if ! sudo test -f "${ENV_FILE}" || ! sudo cmp -s "${tmp_env}" "${ENV_FILE}"; then
+if ! sudo test -f "${ENV_FILE}"; then
+  tmp_env=$(mktemp)
+  : >"${tmp_env}"
   sudo install -m 0640 -o root -g root "${tmp_env}" "${ENV_FILE}"
-  log "updated ${ENV_FILE}"
-else
-  log "env file unchanged"
+  rm -f "${tmp_env}"
+  log "created ${ENV_FILE}"
 fi
-rm -f "${tmp_env}"
+
+append_env_if_missing "MIX_ENV" "prod"
+append_env_if_missing "PHX_SERVER" "true"
+append_env_if_missing "PHX_HOST" "${PHX_HOST}"
+append_env_if_missing "PORT" "${PORT}"
+append_env_if_missing "SYNOPTICON_DATA_DIR" "${SYNOPTICON_DATA_DIR}"
+
+if ! sudo grep -Eq '^SECRET_KEY_BASE=' "${ENV_FILE}"; then
+  if command -v openssl >/dev/null 2>&1; then
+    generated_secret=$(openssl rand -base64 64 | tr -d '\n')
+  else
+    generated_secret=$(mix phx.gen.secret)
+  fi
+
+  append_env_if_missing "SECRET_KEY_BASE" "${generated_secret}"
+else
+  log "preserve existing SECRET_KEY_BASE in ${ENV_FILE}"
+fi
 
 log "fetch deps"
 mix deps.get --only prod
