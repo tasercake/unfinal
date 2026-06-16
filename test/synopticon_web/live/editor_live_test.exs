@@ -15,24 +15,26 @@ defmodule SynopticonWeb.EditorLiveTest do
     {:ok, notes, notes_html} = live(conn, "/notes")
     {:ok, existing, existing_html} = live(conn, "/existing")
 
-    assert root_html =~ "<textarea"
-    assert notes_html =~ "<textarea"
+    assert root_html =~ ~s(<article id="readonly-document")
+    assert notes_html =~ ~s(<article id="readonly-document")
     assert existing_html =~ "saved text"
     refute render(root) =~ "saved text"
     refute render(notes) =~ "saved text"
     assert render(existing) =~ "saved text"
   end
 
-  test "unauthenticated textarea is readonly and shows readonly page chrome", %{conn: conn} do
+  test "unauthenticated content view shows readonly page chrome", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/notes")
 
-    assert html =~ "<textarea"
-    assert html =~ ~s(readonly="readonly")
+    assert html =~ ~s(<article id="readonly-document")
+    refute html =~ "<textarea"
+    refute html =~ ~s(readonly="readonly")
     assert html =~ "Synopticon"
     refute html =~ "If text exists, it is already out there."
     assert html =~ ~s(<footer id="login-bar")
-    assert html =~ "Document /notes"
+    refute html =~ "Document /notes"
     assert html =~ "readonly live view"
+    assert html =~ "Login to edit"
   end
 
   test "authenticated writer textarea is editable", %{conn: conn} do
@@ -51,7 +53,7 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert html =~ "live editing"
   end
 
-  test "authenticated non-writer textarea is readonly", %{conn: conn} do
+  test "authenticated non-writer sees content view", %{conn: conn} do
     with_writers("writer@example.com")
 
     conn =
@@ -62,8 +64,10 @@ defmodule SynopticonWeb.EditorLiveTest do
 
     {:ok, view, html} = live(conn, ~p"/")
 
-    assert html =~ "<textarea"
-    assert html =~ ~s(readonly="readonly")
+    assert html =~ ~s(<article id="readonly-document")
+    refute html =~ "<textarea"
+    refute html =~ ~s(readonly="readonly")
+    assert html =~ "logged in as other@example.com (read only)"
 
     render_hook(view, "save", %{"content" => "blocked"})
     assert ContentStore.get("/") == ""
