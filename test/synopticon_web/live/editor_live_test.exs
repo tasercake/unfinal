@@ -38,6 +38,14 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert html =~ "Login to edit"
   end
 
+  test "readonly document does not add template whitespace to content", %{conn: conn} do
+    ContentStore.set("/plain", "hello")
+
+    {:ok, _view, html} = live(conn, "/plain")
+
+    assert html =~ ~r/<article[^>]*id="readonly-document"[^>]*>hello<\/article>/
+  end
+
   test "authenticated writer textarea is editable", %{conn: conn} do
     with_writers("writer@example.com")
 
