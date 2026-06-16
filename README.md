@@ -50,3 +50,7 @@ From the repo directory on the VM:
 ```
 
 Defaults: `SERVICE_NAME=synopticon`, `APP_DIR=$(pwd -P)`, `PHX_HOST=$(hostname).exe.xyz`, `PORT=8000`.
+
+## Deploy service ownership
+
+`deploy-exe-dev.sh` owns `/etc/systemd/system/synopticon.service`; put customizations in `systemctl edit synopticon` / a systemd override, not direct service-file edits.
