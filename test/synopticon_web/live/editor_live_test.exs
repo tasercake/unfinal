@@ -27,6 +27,7 @@ defmodule SynopticonWeb.EditorLiveTest do
     {:ok, _view, html} = live(conn, "/notes")
 
     assert html =~ ~s(<article id="readonly-document")
+    assert html =~ ~s(border border-stone-200)
     refute html =~ "<textarea"
     refute html =~ ~s(readonly="readonly")
     assert html =~ "Synopticon"
