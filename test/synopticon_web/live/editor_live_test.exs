@@ -23,11 +23,15 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert render(existing) =~ "saved text"
   end
 
-  test "unauthenticated textarea is readonly", %{conn: conn} do
-    {:ok, _view, html} = live(conn, ~p"/")
+  test "unauthenticated textarea is readonly and shows readonly page chrome", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/notes")
 
     assert html =~ "<textarea"
     assert html =~ ~s(readonly="readonly")
+    assert html =~ "Synopticon"
+    assert html =~ "If text exists, it is already out there."
+    assert html =~ "Document /notes"
+    assert html =~ "readonly live view"
   end
 
   test "authenticated writer textarea is editable", %{conn: conn} do
@@ -43,6 +47,7 @@ defmodule SynopticonWeb.EditorLiveTest do
 
     assert html =~ "<textarea"
     refute html =~ ~s(readonly="readonly")
+    assert html =~ "live editing"
   end
 
   test "authenticated non-writer textarea is readonly", %{conn: conn} do

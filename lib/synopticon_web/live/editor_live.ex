@@ -51,30 +51,48 @@ defmodule SynopticonWeb.EditorLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div style="min-height: 100vh; display: flex; flex-direction: column; margin: 0;">
-      <.form
-        :if={@writer?}
-        for={%{}}
-        as={:editor}
-        id="editor-form"
-        phx-change="save"
-        style="flex: 1; display: flex; margin: 0;"
-      >
-        <textarea name="content" style="flex: 1; width: 100%; resize: none; border: 0; padding: 8px;"><%= @content %></textarea>
-      </.form>
+    <div class="min-h-screen bg-stone-50 text-stone-950">
+      <main class="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-5 px-5 py-6 sm:px-8">
+        <header class="flex flex-col gap-3 border-b border-stone-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 class="text-2xl font-semibold tracking-tight">Synopticon</h1>
+            <p class="mt-1 text-sm text-stone-600">If text exists, it is already out there.</p>
+          </div>
 
-      <textarea
-        :if={!@writer?}
-        name="content"
-        readonly="readonly"
-        style="flex: 1; width: 100%; resize: none; border: 0; padding: 8px;"
-      ><%= @content %></textarea>
+          <div id="login-bar" class="text-sm text-stone-600 sm:text-right">
+            <a :if={!@authenticated} class="underline underline-offset-4" href="/login">Login with exe</a>
+            <span :if={@authenticated and @writer?}>authenticated as {@exe_user["email"]}</span>
+            <span :if={@authenticated and !@writer?}>authenticated as {@exe_user["email"]} (read only)</span>
+          </div>
+        </header>
 
-      <div id="login-bar" style="display: flex; gap: 4px; padding: 4px;">
-        <a :if={!@authenticated} href="/login">Login with exe</a>
-        <span :if={@authenticated and @writer?}>authenticated as {@exe_user["email"]}</span>
-        <span :if={@authenticated and !@writer?}>authenticated as {@exe_user["email"]} (read only)</span>
-      </div>
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-stone-500">
+          <span>Document {@path}</span>
+          <span :if={@writer?}>live editing</span>
+          <span :if={!@writer?}>readonly live view</span>
+        </div>
+
+        <.form
+          :if={@writer?}
+          for={%{}}
+          as={:editor}
+          id="editor-form"
+          phx-change="save"
+          class="flex flex-1"
+        >
+          <textarea
+            name="content"
+            class="min-h-[70vh] flex-1 resize-none rounded-xl border border-stone-200 bg-white p-5 text-lg leading-8 shadow-sm outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
+          ><%= @content %></textarea>
+        </.form>
+
+        <textarea
+          :if={!@writer?}
+          name="content"
+          readonly="readonly"
+          class="min-h-[70vh] flex-1 resize-none rounded-xl border border-stone-200 bg-white p-5 text-lg leading-8 shadow-sm outline-none"
+        ><%= @content %></textarea>
+      </main>
     </div>
     """
   end
