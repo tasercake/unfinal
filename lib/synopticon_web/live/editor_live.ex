@@ -4,12 +4,16 @@ defmodule SynopticonWeb.EditorLive do
   alias Synopticon.ContentStore
 
   @impl true
-  def mount(_params, session, socket) do
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Synopticon.PubSub, ContentStore.topic())
+  def mount(params, session, socket) do
+    path = document_path(params)
+
+    if connected?(socket),
+      do: Phoenix.PubSub.subscribe(Synopticon.PubSub, ContentStore.topic(path))
 
     socket =
       assign(socket,
-        content: ContentStore.get(),
+        path: path,
+        content: ContentStore.get(path),
         authenticated: Map.get(session, "authenticated", false),
         password_error: Map.get(session, "password_error", false)
       )
@@ -18,17 +22,24 @@ defmodule SynopticonWeb.EditorLive do
   end
 
   @impl true
-  def handle_event("save", %{"content" => content}, %{assigns: %{authenticated: true}} = socket) do
-    ContentStore.set(content)
+  def handle_event(
+        "save",
+        %{"content" => content},
+        %{assigns: %{authenticated: true, path: path}} = socket
+      ) do
+    ContentStore.set(path, content)
     {:noreply, assign(socket, :content, content)}
   end
 
   def handle_event("save", _params, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_info({:content_updated, content}, socket) do
+  def handle_info({:content_updated, path, content}, %{assigns: %{path: path}} = socket) do
     {:noreply, assign(socket, :content, content)}
   end
+
+  defp document_path(%{"path" => parts}), do: "/" <> Enum.join(parts, "/")
+  defp document_path(_params), do: "/"
 
   @impl true
   def render(assigns) do
@@ -38,6 +49,7 @@ defmodule SynopticonWeb.EditorLive do
         :if={@authenticated}
         for={%{}}
         as={:editor}
+        id="editor-form"
         phx-change="save"
         style="flex: 1; display: flex; margin: 0;"
       >
@@ -50,7 +62,12 @@ defmodule SynopticonWeb.EditorLive do
         style="flex: 1; width: 100%; resize: none; border: 0; padding: 8px;"
       ><%= @content %></textarea>
 
-      <form action="/login" method="post" style="display: flex; gap: 4px; padding: 4px;">
+      <form
+        id="login-form"
+        action="/login"
+        method="post"
+        style="display: flex; gap: 4px; padding: 4px;"
+      >
         <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
         <input type="password" name="password" placeholder="password" />
         <button type="submit">log in</button>

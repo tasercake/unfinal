@@ -4,23 +4,31 @@ defmodule Synopticon.ContentStoreTest do
   alias Synopticon.ContentStore
 
   setup do
-    ContentStore.set("")
+    ContentStore.clear()
     :ok
   end
 
-  test "stores latest content in memory" do
-    assert ContentStore.get() == ""
-
-    ContentStore.set("hello")
-
-    assert ContentStore.get() == "hello"
+  test "paths are empty by default" do
+    assert ContentStore.get("/") == ""
+    assert ContentStore.get("/notes") == ""
   end
 
-  test "broadcasts content changes" do
-    Phoenix.PubSub.subscribe(Synopticon.PubSub, ContentStore.topic())
+  test "stores latest content per path in memory" do
+    ContentStore.set("/notes", "hello")
+    ContentStore.set("/other", "world")
 
-    ContentStore.set("live")
+    assert ContentStore.get("/notes") == "hello"
+    assert ContentStore.get("/other") == "world"
+    assert ContentStore.get("/") == ""
+  end
 
-    assert_receive {:content_updated, "live"}
+  test "broadcasts content changes only on path topic" do
+    Phoenix.PubSub.subscribe(Synopticon.PubSub, ContentStore.topic("/notes"))
+
+    ContentStore.set("/other", "ignored")
+    ContentStore.set("/notes", "live")
+
+    assert_receive {:content_updated, "/notes", "live"}
+    refute_receive {:content_updated, "/other", "ignored"}
   end
 end

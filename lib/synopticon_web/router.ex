@@ -19,6 +19,7 @@ defmodule SynopticonWeb.Router do
 
     live "/", EditorLive
     post "/login", SessionController, :create
+    live "/*path", EditorLive
   end
 
   # Other scopes may use custom stacks.
