@@ -80,9 +80,8 @@ defmodule SynopticonWeb.EditorLive do
           :if={!@writer?}
           id="readonly-document"
           class="h-full min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap border border-stone-200 bg-white p-5 text-left text-lg leading-8 shadow-sm"
-        >
-          {@content}
-        </article>
+          phx-no-format
+        ><%= @content %></article>
 
         <footer id="login-bar" class="shrink-0 pt-4 text-sm text-stone-600">
           <a :if={!@authenticated} class="underline underline-offset-4" href="/login">Login to edit</a>
