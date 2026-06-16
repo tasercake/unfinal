@@ -5,8 +5,8 @@ defmodule SynopticonWeb.PageControllerTest do
     conn = get(conn, ~p"/")
     response = html_response(conn, 200)
 
-    assert response =~ "<textarea"
+    assert response =~ ~s(<article id="readonly-document")
     refute response =~ "password"
-    assert response =~ "Login with exe"
+    assert response =~ "Login to edit"
   end
 end

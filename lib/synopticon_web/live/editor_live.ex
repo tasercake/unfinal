@@ -58,7 +58,6 @@ defmodule SynopticonWeb.EditorLive do
         </header>
 
         <div class="flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs uppercase tracking-wide text-stone-500">
-          <span>Document {@path}</span>
           <span :if={@writer?}>live editing</span>
           <span :if={!@writer?}>readonly live view</span>
         </div>
@@ -73,21 +72,22 @@ defmodule SynopticonWeb.EditorLive do
         >
           <textarea
             name="content"
-            class="h-full min-h-0 flex-1 resize-none overflow-y-auto rounded-xl border border-stone-200 bg-white p-5 text-left text-lg leading-8 shadow-sm outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
+            class="h-full min-h-0 flex-1 resize-none overflow-y-auto border border-stone-200 bg-white p-5 text-left text-lg leading-8 shadow-sm outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
           ><%= @content %></textarea>
         </.form>
 
-        <textarea
+        <article
           :if={!@writer?}
-          name="content"
-          readonly="readonly"
-          class="h-full min-h-0 flex-1 resize-none overflow-y-auto rounded-xl border border-stone-200 bg-white p-5 text-left text-lg leading-8 shadow-sm outline-none"
-        ><%= @content %></textarea>
+          id="readonly-document"
+          class="h-full min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap bg-white p-5 text-left text-lg leading-8 shadow-sm"
+        >
+          {@content}
+        </article>
 
-        <footer id="login-bar" class="shrink-0 border-t border-stone-200 pt-4 text-sm text-stone-600">
-          <a :if={!@authenticated} class="underline underline-offset-4" href="/login">Login with exe</a>
-          <span :if={@authenticated and @writer?}>authenticated as {@exe_user["email"]}</span>
-          <span :if={@authenticated and !@writer?}>authenticated as {@exe_user["email"]} (read only)</span>
+        <footer id="login-bar" class="shrink-0 pt-4 text-sm text-stone-600">
+          <a :if={!@authenticated} class="underline underline-offset-4" href="/login">Login to edit</a>
+          <span :if={@authenticated and @writer?}>logged in as {@exe_user["email"]}</span>
+          <span :if={@authenticated and !@writer?}>logged in as {@exe_user["email"]} (read only)</span>
         </footer>
       </main>
     </div>
