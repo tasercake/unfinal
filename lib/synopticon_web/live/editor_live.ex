@@ -51,22 +51,13 @@ defmodule SynopticonWeb.EditorLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-stone-50 text-stone-950">
-      <main class="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-5 px-5 py-6 sm:px-8">
-        <header class="flex flex-col gap-3 border-b border-stone-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 class="text-2xl font-semibold tracking-tight">Synopticon</h1>
-            <p class="mt-1 text-sm text-stone-600">If text exists, it is already out there.</p>
-          </div>
-
-          <div id="login-bar" class="text-sm text-stone-600 sm:text-right">
-            <a :if={!@authenticated} class="underline underline-offset-4" href="/login">Login with exe</a>
-            <span :if={@authenticated and @writer?}>authenticated as {@exe_user["email"]}</span>
-            <span :if={@authenticated and !@writer?}>authenticated as {@exe_user["email"]} (read only)</span>
-          </div>
+    <div class="h-dvh min-h-dvh overflow-hidden bg-stone-50 text-center text-stone-950 [font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
+      <main class="mx-auto flex h-full min-h-0 w-full max-w-[52rem] flex-col gap-4 px-3 py-4 sm:px-8 sm:py-6 md:px-16 lg:px-24">
+        <header class="shrink-0 border-b border-stone-200 pb-4">
+          <h1 class="text-3xl font-semibold tracking-tight">Synopticon</h1>
         </header>
 
-        <div class="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-stone-500">
+        <div class="flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs uppercase tracking-wide text-stone-500">
           <span>Document {@path}</span>
           <span :if={@writer?}>live editing</span>
           <span :if={!@writer?}>readonly live view</span>
@@ -78,11 +69,11 @@ defmodule SynopticonWeb.EditorLive do
           as={:editor}
           id="editor-form"
           phx-change="save"
-          class="flex flex-1"
+          class="flex min-h-0 flex-1 overflow-hidden"
         >
           <textarea
             name="content"
-            class="min-h-[70vh] flex-1 resize-none rounded-xl border border-stone-200 bg-white p-5 text-lg leading-8 shadow-sm outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
+            class="h-full min-h-0 flex-1 resize-none overflow-y-auto rounded-xl border border-stone-200 bg-white p-5 text-left text-lg leading-8 shadow-sm outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
           ><%= @content %></textarea>
         </.form>
 
@@ -90,8 +81,14 @@ defmodule SynopticonWeb.EditorLive do
           :if={!@writer?}
           name="content"
           readonly="readonly"
-          class="min-h-[70vh] flex-1 resize-none rounded-xl border border-stone-200 bg-white p-5 text-lg leading-8 shadow-sm outline-none"
+          class="h-full min-h-0 flex-1 resize-none overflow-y-auto rounded-xl border border-stone-200 bg-white p-5 text-left text-lg leading-8 shadow-sm outline-none"
         ><%= @content %></textarea>
+
+        <footer id="login-bar" class="shrink-0 border-t border-stone-200 pt-4 text-sm text-stone-600">
+          <a :if={!@authenticated} class="underline underline-offset-4" href="/login">Login with exe</a>
+          <span :if={@authenticated and @writer?}>authenticated as {@exe_user["email"]}</span>
+          <span :if={@authenticated and !@writer?}>authenticated as {@exe_user["email"]} (read only)</span>
+        </footer>
       </main>
     </div>
     """

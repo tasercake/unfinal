@@ -29,7 +29,8 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert html =~ "<textarea"
     assert html =~ ~s(readonly="readonly")
     assert html =~ "Synopticon"
-    assert html =~ "If text exists, it is already out there."
+    refute html =~ "If text exists, it is already out there."
+    assert html =~ ~s(<footer id="login-bar")
     assert html =~ "Document /notes"
     assert html =~ "readonly live view"
   end
