@@ -21,6 +21,7 @@ SERVICE_NAME=${SERVICE_NAME:-synopticon}
 APP_DIR=${APP_DIR:-$(pwd -P)}
 PHX_HOST=${PHX_HOST:-$(hostname).exe.xyz}
 PORT=${PORT:-8000}
+SYNOPTICON_DATA_DIR=${SYNOPTICON_DATA_DIR:-${APP_DIR}/.data}
 DEPLOY_USER=${DEPLOY_USER:-$(id -un)}
 ENV_DIR=${ENV_DIR:-/etc/${SERVICE_NAME}}
 ENV_FILE=${ENV_FILE:-${ENV_DIR}/${SERVICE_NAME}.env}
@@ -31,6 +32,7 @@ export MIX_ENV=prod
 export PHX_SERVER=true
 export PHX_HOST
 export PORT
+export SYNOPTICON_DATA_DIR
 
 if [[ ! -f "${APP_DIR}/mix.exs" ]]; then
   printf 'APP_DIR must point to repo root with mix.exs: %s\n' "${APP_DIR}" >&2
@@ -67,6 +69,7 @@ MIX_ENV="prod"
 PHX_SERVER="true"
 PHX_HOST=$(quote_env "${PHX_HOST}")
 PORT=$(quote_env "${PORT}")
+SYNOPTICON_DATA_DIR=$(quote_env "${SYNOPTICON_DATA_DIR}")
 SECRET_KEY_BASE=$(quote_env "${existing_secret}")
 EOF_ENV
 

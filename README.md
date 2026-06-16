@@ -13,8 +13,9 @@ Each URL is a live document. Visitors can read in real time; configured authenti
   - dev: fake login as `dev@example.com`
   - prod: trusts exe.dev `X-ExeDev-UserID` / `X-ExeDev-Email` proxy headers
 - Writer allowlist from `config/local/writers.txt`.
-- One in-memory document per path (`/`, `/notes/foo`, etc.).
-- No database; server restart clears content.
+- One live document per path (`/`, `/notes/foo`, etc.).
+- No database; documents persist as files under `SYNOPTICON_DATA_DIR/documents`.
+- `SYNOPTICON_DATA_DIR` defaults to `./.data`.
 - `.env` auto-load for local env vars.
 
 ## Run
@@ -26,6 +27,10 @@ mix phx.server
 ```
 
 Open <http://localhost:3000/>.
+
+## Persistence
+
+Documents are stored in `SYNOPTICON_DATA_DIR/documents`, where `SYNOPTICON_DATA_DIR` defaults to `./.data`. Each document is a single `sha256(path).txt` file; there is no database or metadata file.
 
 ## Local writers
 
