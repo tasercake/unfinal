@@ -28,3 +28,26 @@ Synopticon loads `.env` from the current app directory at startup for optional l
 - Authenticated tabs persist textarea changes into `Synopticon.ContentStore`, a supervised in-memory GenServer.
 - `Synopticon.ContentStore` broadcasts each authenticated edit over Phoenix PubSub to all open LiveView tabs.
 - No database is used. Server restart clears content.
+
+## Deploy on exe.dev VM
+
+Run from the repo directory on the VM:
+
+```bash
+./deploy-exe-dev.sh
+```
+
+Defaults:
+
+- `SERVICE_NAME=synopticon`
+- `APP_DIR=$(pwd -P)`
+- `PHX_HOST=$(hostname).exe.xyz`
+- `PORT=8000`
+
+Override when needed:
+
+```bash
+PHX_HOST=synopticon.exe.xyz PORT=8000 ./deploy-exe-dev.sh
+```
+
+The script fetches prod deps, compiles, runs `mix assets.deploy`, writes `/etc/synopticon/synopticon.env` with a persisted `SECRET_KEY_BASE`, writes or updates `/etc/systemd/system/synopticon.service`, enables the service, and restarts it. It prints service status, plus logs if restart fails.
