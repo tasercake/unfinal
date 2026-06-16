@@ -79,7 +79,7 @@ defmodule SynopticonWeb.EditorLive do
         <article
           :if={!@writer?}
           id="readonly-document"
-          class="h-full min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap bg-white p-5 text-left text-lg leading-8 shadow-sm"
+          class="h-full min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap border border-stone-200 bg-white p-5 text-left text-lg leading-8 shadow-sm"
         >
           {@content}
         </article>
