@@ -18,10 +18,13 @@ defmodule SynopticonWeb.SessionController do
     end
   end
 
-  def logout(conn, _params) do
+  def logout(conn, params) do
+    return_to = safe_return_to(Map.get(params, "return_to"))
+
     conn
     |> clear_session()
-    |> redirect(to: ~p"/")
+    |> put_resp_content_type("text/html")
+    |> html(logout_html(return_to))
   end
 
   defp exe_user_from_headers(conn) do
@@ -41,7 +44,10 @@ defmodule SynopticonWeb.SessionController do
   end
 
   defp safe_return_to(path) when is_binary(path) do
-    if String.starts_with?(path, "/") and not String.starts_with?(path, "//") do
+    uri = URI.parse(path)
+
+    if is_nil(uri.scheme) and is_nil(uri.host) and String.starts_with?(path, "/") and
+         not String.starts_with?(path, "//") do
       path
     else
       ~p"/"
@@ -53,5 +59,40 @@ defmodule SynopticonWeb.SessionController do
   defp exe_login_path(return_to) do
     redirect_path = ~p"/login?return_to=#{return_to}"
     "/__exe.dev/login?redirect=#{URI.encode_www_form(redirect_path)}"
+  end
+
+  defp logout_html(return_to) do
+    encoded_return_to = return_to |> Jason.encode!() |> String.replace("</", "<\\/")
+
+    """
+    <!doctype html>
+    <html lang=\"en\">
+      <head>
+        <meta charset=\"utf-8\">
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+        <title>Logging out · Synopticon</title>
+      </head>
+      <body class=\"min-h-dvh bg-stone-50 text-stone-950\">
+        <main class=\"grid min-h-dvh place-items-center p-6 text-center\">
+          <p>Logging out…</p>
+        </main>
+        <script>
+          (() => {
+            const fallback = "/";
+            const returnTo = #{encoded_return_to};
+            const safeReturnTo = value => value.startsWith("/") && !value.startsWith("//") ? value : fallback;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            fetch("/__exe.dev/logout", {method: "POST", credentials: "include", signal: controller.signal})
+              .catch(() => {})
+              .finally(() => {
+                clearTimeout(timeout);
+                window.location.replace(safeReturnTo(returnTo));
+              });
+          })();
+        </script>
+      </body>
+    </html>
+    """
   end
 end

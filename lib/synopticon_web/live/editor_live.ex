@@ -93,9 +93,13 @@ defmodule SynopticonWeb.EditorLive do
           </a>
           <span :if={@authenticated} class="inline-flex items-center gap-1 whitespace-nowrap">
             <span>Logged in as {@exe_user["email"]} •</span>
-            <.form for={%{}} id="logout-form" action={~p"/logout"} method="post" class="inline-flex">
-              <button type="submit" class="underline underline-offset-4">Logout</button>
-            </.form>
+            <a
+              id="logout-link"
+              class="underline underline-offset-4"
+              href={~p"/logout?return_to=#{@path}"}
+            >
+              Logout
+            </a>
           </span>
         </footer>
       </main>

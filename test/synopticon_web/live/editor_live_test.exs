@@ -63,8 +63,8 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert html =~ "live editing"
     assert html =~ "Logged in as writer@example.com •"
     assert html =~ ~s(class="inline-flex items-center gap-1 whitespace-nowrap")
-    assert html =~ ~s(id="logout-form")
-    assert html =~ ~s(action="/logout")
+    assert html =~ ~s(id="logout-link")
+    assert html =~ ~s(href="/logout?return_to=%2F")
     assert html =~ "Logout"
   end
 
@@ -77,18 +77,19 @@ defmodule SynopticonWeb.EditorLiveTest do
         exe_user: %{"email" => "other@example.com"}
       )
 
-    {:ok, view, html} = live(conn, ~p"/")
+    {:ok, view, html} = live(conn, "/non-writer")
 
     assert html =~ ~s(<article id="readonly-document")
     refute html =~ "<textarea"
     refute html =~ ~s(readonly="readonly")
     assert html =~ "Logged in as other@example.com •"
     assert html =~ ~s(class="inline-flex items-center gap-1 whitespace-nowrap")
-    assert html =~ ~s(action="/logout")
+    assert html =~ ~s(id="logout-link")
+    assert html =~ ~s(href="/logout?return_to=%2Fnon-writer")
     assert html =~ "Logout"
 
     render_hook(view, "save", %{"content" => "blocked"})
-    assert ContentStore.get("/") == ""
+    assert ContentStore.get("/non-writer") == ""
   end
 
   test "authenticated writer edits persist only for current path and update matching viewers", %{

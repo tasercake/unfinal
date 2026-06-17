@@ -39,9 +39,11 @@ defmodule SynopticonWeb.SessionControllerTest do
   test "GET /login rejects unsafe return_to", %{conn: conn} do
     Application.put_env(:synopticon, :login_mode, :dev_fake)
 
-    conn = get(conn, ~p"/login?return_to=//evil.example")
+    for unsafe <- ["//evil.example", "https://evil.example/path"] do
+      conn = get(conn, ~p"/login?return_to=#{unsafe}")
 
-    assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/"
+    end
   end
 
   test "GET /login with exe headers signs in and redirects back", %{conn: conn} do
@@ -69,16 +71,39 @@ defmodule SynopticonWeb.SessionControllerTest do
     refute get_session(conn, :authenticated)
   end
 
-  test "POST /logout clears local session and returns to homepage", %{conn: conn} do
+  test "GET /logout clears local session and renders exe.dev background logout page", %{
+    conn: conn
+  } do
     conn =
       conn
       |> Plug.Test.init_test_session(
         authenticated: true,
         exe_user: %{"id" => "usr1234", "email" => "user@example.com"}
       )
-      |> post(~p"/logout")
+      |> get(~p"/logout?return_to=/notes")
 
-    assert redirected_to(conn) == ~p"/"
+    assert html_response(conn, 200) =~ "Logging out…"
+    assert conn.resp_body =~ "fetch(\"/__exe.dev/logout\","
+    assert conn.resp_body =~ ~s(method: "POST")
+    assert conn.resp_body =~ ~s(credentials: "include")
+    assert conn.resp_body =~ "AbortController"
+    assert conn.resp_body =~ "4000"
+    assert conn.resp_body =~ "const returnTo = \"/notes\";"
+    assert conn.resp_body =~ "window.location.replace(safeReturnTo(returnTo));"
+    refute get_session(conn, :authenticated)
+    refute get_session(conn, :exe_user)
+  end
+
+  test "POST /logout remains supported and sanitizes unsafe return_to", %{conn: conn} do
+    conn =
+      conn
+      |> Plug.Test.init_test_session(
+        authenticated: true,
+        exe_user: %{"id" => "usr1234", "email" => "user@example.com"}
+      )
+      |> post(~p"/logout?return_to=https://evil.example/path")
+
+    assert html_response(conn, 200) =~ "const returnTo = \"/\";"
     refute get_session(conn, :authenticated)
     refute get_session(conn, :exe_user)
   end
