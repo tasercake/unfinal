@@ -84,9 +84,19 @@ defmodule SynopticonWeb.EditorLive do
         ><%= @content %></article>
 
         <footer id="login-bar" class="shrink-0 pt-4 text-sm text-stone-600">
-          <a :if={!@authenticated} class="underline underline-offset-4" href="/login">Login to edit</a>
-          <span :if={@authenticated and @writer?}>logged in as {@exe_user["email"]}</span>
-          <span :if={@authenticated and !@writer?}>logged in as {@exe_user["email"]} (read only)</span>
+          <a
+            :if={!@authenticated}
+            class="underline underline-offset-4"
+            href={~p"/login?return_to=#{@path}"}
+          >
+            Login to edit
+          </a>
+          <span :if={@authenticated}>
+            Logged in as {@exe_user["email"]} •
+            <form id="exe-logout-form" action="/__exe.dev/logout" method="post" class="inline">
+              <button type="submit" class="underline underline-offset-4">Logout</button>
+            </form>
+          </span>
         </footer>
       </main>
     </div>

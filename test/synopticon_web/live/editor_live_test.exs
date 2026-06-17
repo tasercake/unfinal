@@ -36,6 +36,7 @@ defmodule SynopticonWeb.EditorLiveTest do
     refute html =~ "Document /notes"
     assert html =~ "readonly live view"
     assert html =~ "Login to edit"
+    assert html =~ ~s(href="/login?return_to=%2Fnotes")
   end
 
   test "readonly document does not add template whitespace to content", %{conn: conn} do
@@ -60,6 +61,8 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert html =~ "<textarea"
     refute html =~ ~s(readonly="readonly")
     assert html =~ "live editing"
+    assert html =~ "Logged in as writer@example.com •"
+    assert html =~ "Logout"
   end
 
   test "authenticated non-writer sees content view", %{conn: conn} do
@@ -76,7 +79,9 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert html =~ ~s(<article id="readonly-document")
     refute html =~ "<textarea"
     refute html =~ ~s(readonly="readonly")
-    assert html =~ "logged in as other@example.com (read only)"
+    assert html =~ "Logged in as other@example.com •"
+    assert html =~ ~s(action="/__exe.dev/logout")
+    assert html =~ "Logout"
 
     render_hook(view, "save", %{"content" => "blocked"})
     assert ContentStore.get("/") == ""
