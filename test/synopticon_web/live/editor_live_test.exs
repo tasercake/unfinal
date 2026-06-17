@@ -68,6 +68,79 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert html =~ "Logout"
   end
 
+  test "blank page links are hidden when unauthenticated", %{conn: conn} do
+    with_blank_page_paths(["/bluebird", "/rainriver", "/moonstone", "/greenfield", "/sunwind"])
+
+    {:ok, _view, html} = live(conn, ~p"/")
+
+    refute html =~ ~s(id="blank-page-links")
+    refute html =~ "/bluebird"
+  end
+
+  test "blank page links are hidden when logged in without editing enabled", %{conn: conn} do
+    with_writers("writer@example.com")
+    with_blank_page_paths(["/bluebird", "/rainriver", "/moonstone", "/greenfield", "/sunwind"])
+
+    conn =
+      Plug.Test.init_test_session(conn,
+        authenticated: true,
+        exe_user: %{"email" => "other@example.com"}
+      )
+
+    {:ok, _view, html} = live(conn, ~p"/")
+
+    refute html =~ ~s(id="blank-page-links")
+    refute html =~ "/bluebird"
+  end
+
+  test "homepage shows five non-mobile blank page links for authenticated writer", %{conn: conn} do
+    with_writers("writer@example.com")
+    with_blank_page_paths(["/bluebird", "/rainriver", "/moonstone", "/greenfield", "/sunwind"])
+
+    conn =
+      Plug.Test.init_test_session(conn,
+        authenticated: true,
+        exe_user: %{"email" => "writer@example.com"}
+      )
+
+    {:ok, _view, html} = live(conn, ~p"/")
+
+    assert html =~ ~s(<aside id="blank-page-links")
+    assert html =~ ~s(class="hidden py-6 text-left text-sm text-stone-600 lg:block")
+    assert html =~ ~s(href="/bluebird")
+    assert html =~ ~s(href="/rainriver")
+    assert html =~ ~s(href="/moonstone")
+    assert html =~ ~s(href="/greenfield")
+    assert html =~ ~s(href="/sunwind")
+    assert html |> Floki.parse_document!() |> Floki.find("#blank-page-links a") |> length() == 5
+  end
+
+  test "generated blank page paths join exactly two dictionary words", %{conn: _conn} do
+    words = SynopticonWeb.EditorLive.blank_page_words()
+    dictionary_pattern = Enum.join(words, "|")
+
+    assert SynopticonWeb.EditorLive.random_blank_page_paths()
+           |> Enum.all?(fn path ->
+             Regex.match?(~r/^\/(#{dictionary_pattern})(#{dictionary_pattern})$/, path)
+           end)
+  end
+
+  test "blank page links are homepage only", %{conn: conn} do
+    with_writers("writer@example.com")
+    with_blank_page_paths(["/bluebird", "/rainriver", "/moonstone", "/greenfield", "/sunwind"])
+
+    conn =
+      Plug.Test.init_test_session(conn,
+        authenticated: true,
+        exe_user: %{"email" => "writer@example.com"}
+      )
+
+    {:ok, _view, html} = live(conn, "/notes")
+
+    refute html =~ ~s(id="blank-page-links")
+    refute html =~ "/bluebird"
+  end
+
   test "authenticated non-writer sees content view", %{conn: conn} do
     with_writers("writer@example.com")
 
@@ -115,6 +188,14 @@ defmodule SynopticonWeb.EditorLiveTest do
     assert ContentStore.get("/other") == ""
     assert render(notes_viewer) =~ "notes body"
     refute render(other_viewer) =~ "notes body"
+  end
+
+  defp with_blank_page_paths(paths) do
+    Application.put_env(:synopticon, :blank_page_path_generator, fn -> paths end)
+
+    on_exit(fn ->
+      Application.delete_env(:synopticon, :blank_page_path_generator)
+    end)
   end
 
   defp with_writers(content) do
