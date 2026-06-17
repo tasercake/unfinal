@@ -31,7 +31,6 @@ append_env_if_missing() {
 
 SERVICE_NAME=${SERVICE_NAME:-unfinal}
 APP_DIR=${APP_DIR:-$(pwd -P)}
-PHX_HOST=${PHX_HOST:-$(hostname).exe.xyz}
 PORT=${PORT:-8000}
 UNFINAL_DATA_DIR=${UNFINAL_DATA_DIR:-${APP_DIR}/../.unfinal}
 DEPLOY_USER=${DEPLOY_USER:-$(id -un)}
@@ -42,7 +41,6 @@ SERVICE_FILE=${SERVICE_FILE:-/etc/systemd/system/${SERVICE_NAME}.service}
 export PATH="/opt/elixir-1.16.3/bin:/usr/local/bin:${PATH}"
 export MIX_ENV=prod
 export PHX_SERVER=true
-export PHX_HOST
 export PORT
 export UNFINAL_DATA_DIR
 
@@ -70,7 +68,6 @@ fi
 
 append_env_if_missing "MIX_ENV" "prod"
 append_env_if_missing "PHX_SERVER" "true"
-append_env_if_missing "PHX_HOST" "${PHX_HOST}"
 append_env_if_missing "PORT" "${PORT}"
 append_env_if_missing "UNFINAL_DATA_DIR" "${UNFINAL_DATA_DIR}"
 
@@ -132,7 +129,7 @@ if sudo systemctl restart "${SERVICE_NAME}.service"; then
   sleep 3
   if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
     sudo systemctl --no-pager --full status "${SERVICE_NAME}.service"
-    log "deploy complete: https://${PHX_HOST}"
+    log "deploy complete: https://$(hostname).exe.xyz"
   else
     printf '\nService started but died. Status:\n' >&2
     sudo systemctl --no-pager --full status "${SERVICE_NAME}.service" >&2 || true
