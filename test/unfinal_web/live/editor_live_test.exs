@@ -77,23 +77,8 @@ defmodule UnfinalWeb.EditorLiveTest do
     refute html =~ "/bluebird"
   end
 
-  test "blank page links are hidden when logged in without editing enabled", %{conn: conn} do
-    with_writers("writer@example.com")
-    with_blank_page_paths(["/bluebird", "/rainriver", "/moonstone", "/greenfield", "/sunwind"])
-
-    conn =
-      Plug.Test.init_test_session(conn,
-        authenticated: true,
-        exe_user: %{"email" => "other@example.com"}
-      )
-
-    {:ok, _view, html} = live(conn, ~p"/")
-
-    refute html =~ ~s(id="blank-page-links")
-    refute html =~ "/bluebird"
-  end
-
-  test "homepage shows five non-mobile blank page links for authenticated writer", %{conn: conn} do
+  test "blank page links not rendered in disconnected (static) mount for authenticated writer",
+       %{conn: conn} do
     with_writers("writer@example.com")
     with_blank_page_paths(["/bluebird", "/rainriver", "/moonstone", "/greenfield", "/sunwind"])
 
@@ -103,16 +88,40 @@ defmodule UnfinalWeb.EditorLiveTest do
         exe_user: %{"email" => "writer@example.com"}
       )
 
-    {:ok, _view, html} = live(conn, ~p"/")
+    html =
+      conn
+      |> get(~p"/")
+      |> html_response(200)
 
-    assert html =~ ~s(<aside id="blank-page-links")
-    assert html =~ ~s(class="hidden py-6 text-left text-sm text-stone-600 lg:block")
-    assert html =~ ~s(href="/bluebird")
-    assert html =~ ~s(href="/rainriver")
-    assert html =~ ~s(href="/moonstone")
-    assert html =~ ~s(href="/greenfield")
-    assert html =~ ~s(href="/sunwind")
-    assert html |> Floki.parse_document!() |> Floki.find("#blank-page-links a") |> length() == 5
+    # Disconnected (static) mount must not render blank-page links
+    refute html =~ ~s(id="blank-page-links")
+    refute html =~ "/bluebird"
+  end
+
+  test "homepage shows five non-mobile blank page links for authenticated writer after connect",
+       %{conn: conn} do
+    with_writers("writer@example.com")
+    with_blank_page_paths(["/bluebird", "/rainriver", "/moonstone", "/greenfield", "/sunwind"])
+
+    conn =
+      Plug.Test.init_test_session(conn,
+        authenticated: true,
+        exe_user: %{"email" => "writer@example.com"}
+      )
+
+    {:ok, view, _html} = live(conn, ~p"/")
+    rendered = render(view)
+
+    assert rendered =~ ~s(<aside id="blank-page-links")
+    assert rendered =~ ~s(class="hidden py-6 text-left text-sm text-stone-600 lg:block")
+    assert rendered =~ ~s(href="/bluebird")
+    assert rendered =~ ~s(href="/rainriver")
+    assert rendered =~ ~s(href="/moonstone")
+    assert rendered =~ ~s(href="/greenfield")
+    assert rendered =~ ~s(href="/sunwind")
+
+    assert rendered |> Floki.parse_document!() |> Floki.find("#blank-page-links a") |> length() ==
+             5
   end
 
   test "generated blank page paths join exactly two dictionary words", %{conn: _conn} do

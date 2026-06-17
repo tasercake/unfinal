@@ -24,7 +24,7 @@ defmodule UnfinalWeb.EditorLive do
         authenticated: Map.get(session, "authenticated", false),
         exe_user: Map.get(session, "exe_user"),
         writer?: writer?(session),
-        blank_page_paths: blank_page_paths(path, session)
+        blank_page_paths: if(connected?(socket), do: blank_page_paths(path, session), else: [])
       )
 
     {:ok, socket}
