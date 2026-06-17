@@ -129,8 +129,17 @@ sudo systemctl daemon-reload
 sudo systemctl enable "${SERVICE_NAME}.service"
 
 if sudo systemctl restart "${SERVICE_NAME}.service"; then
-  sudo systemctl --no-pager --full status "${SERVICE_NAME}.service"
-  log "deploy complete: https://${PHX_HOST}"
+  sleep 3
+  if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+    sudo systemctl --no-pager --full status "${SERVICE_NAME}.service"
+    log "deploy complete: https://${PHX_HOST}"
+  else
+    printf '\nService started but died. Status:\n' >&2
+    sudo systemctl --no-pager --full status "${SERVICE_NAME}.service" >&2 || true
+    printf '\nRecent logs:\n' >&2
+    sudo journalctl -u "${SERVICE_NAME}.service" -n 100 --no-pager >&2 || true
+    exit 1
+  fi
 else
   printf '\nRestart failed. Service status:\n' >&2
   sudo systemctl --no-pager --full status "${SERVICE_NAME}.service" >&2 || true
