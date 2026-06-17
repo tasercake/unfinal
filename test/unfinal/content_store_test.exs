@@ -4,7 +4,7 @@ defmodule Unfinal.ContentStoreTest do
   alias Unfinal.ContentStore
 
   setup do
-    previous_data_dir = System.get_env("SYNOPTICON_DATA_DIR")
+    previous_data_dir = System.get_env("UNFINAL_DATA_DIR")
 
     data_dir =
       Path.join(
@@ -12,7 +12,7 @@ defmodule Unfinal.ContentStoreTest do
         "unfinal-content-store-#{System.unique_integer([:positive])}"
       )
 
-    System.put_env("SYNOPTICON_DATA_DIR", data_dir)
+    System.put_env("UNFINAL_DATA_DIR", data_dir)
     ContentStore.clear()
 
     on_exit(fn ->
@@ -20,9 +20,9 @@ defmodule Unfinal.ContentStoreTest do
       File.rm_rf!(data_dir)
 
       if previous_data_dir do
-        System.put_env("SYNOPTICON_DATA_DIR", previous_data_dir)
+        System.put_env("UNFINAL_DATA_DIR", previous_data_dir)
       else
-        System.delete_env("SYNOPTICON_DATA_DIR")
+        System.delete_env("UNFINAL_DATA_DIR")
       end
     end)
 

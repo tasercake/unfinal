@@ -45,3 +45,8 @@ npm-debug.log
 
 # Local private config.
 /config/local/
+
+# Local spec workflow files.
+.spec/
+
+.worktrees

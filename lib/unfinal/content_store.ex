@@ -108,7 +108,7 @@ defmodule Unfinal.ContentStore do
 
   @spec data_dir() :: String.t()
   defp data_dir do
-    System.get_env("SYNOPTICON_DATA_DIR", "./.data")
+    System.get_env("UNFINAL_DATA_DIR", "./.data")
   end
 
   @spec sha256(path()) :: String.t()

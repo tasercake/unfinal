@@ -10,7 +10,7 @@ Each URL is a live document. Visitors can read in real time; configured authenti
 - `Login with exe` authentication + writer allowlist from `config/local/writers.txt`.
 - One live document per path (`/`, `/notes`, `/foo/bar`, etc.).
 - No database; documents persist as plain-text files.
-- `SYNOPTICON_DATA_DIR` defaults to `./.data`.
+- `UNFINAL_DATA_DIR` defaults to `./.data`.
 - `.env` auto-load for local env vars.
 
 ## Run
@@ -25,7 +25,7 @@ Open <http://localhost:3000/>.
 
 ## Persistence
 
-Documents are stored in `SYNOPTICON_DATA_DIR/documents`, where `SYNOPTICON_DATA_DIR` defaults to `./.data`.
+Documents are stored in `UNFINAL_DATA_DIR/documents`, where `UNFINAL_DATA_DIR` defaults to `./.data`.
 
 Each document is a single `sha256(path).txt` file; there is no database or metadata.
 

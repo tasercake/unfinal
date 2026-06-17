@@ -33,7 +33,7 @@ SERVICE_NAME=${SERVICE_NAME:-unfinal}
 APP_DIR=${APP_DIR:-$(pwd -P)}
 PHX_HOST=${PHX_HOST:-$(hostname).exe.xyz}
 PORT=${PORT:-8000}
-SYNOPTICON_DATA_DIR=${SYNOPTICON_DATA_DIR:-${APP_DIR}/.data}
+UNFINAL_DATA_DIR=${UNFINAL_DATA_DIR:-${APP_DIR}/.data}
 DEPLOY_USER=${DEPLOY_USER:-$(id -un)}
 ENV_DIR=${ENV_DIR:-/etc/${SERVICE_NAME}}
 ENV_FILE=${ENV_FILE:-${ENV_DIR}/${SERVICE_NAME}.env}
@@ -44,7 +44,7 @@ export MIX_ENV=prod
 export PHX_SERVER=true
 export PHX_HOST
 export PORT
-export SYNOPTICON_DATA_DIR
+export UNFINAL_DATA_DIR
 
 if [[ ! -f "${APP_DIR}/mix.exs" ]]; then
   printf 'APP_DIR must point to repo root with mix.exs: %s\n' "${APP_DIR}" >&2
@@ -72,7 +72,7 @@ append_env_if_missing "MIX_ENV" "prod"
 append_env_if_missing "PHX_SERVER" "true"
 append_env_if_missing "PHX_HOST" "${PHX_HOST}"
 append_env_if_missing "PORT" "${PORT}"
-append_env_if_missing "SYNOPTICON_DATA_DIR" "${SYNOPTICON_DATA_DIR}"
+append_env_if_missing "UNFINAL_DATA_DIR" "${UNFINAL_DATA_DIR}"
 
 if ! sudo grep -Eq '^SECRET_KEY_BASE=' "${ENV_FILE}"; then
   if command -v openssl >/dev/null 2>&1; then
