@@ -19,6 +19,7 @@ defmodule SynopticonWeb.Router do
 
     live "/", EditorLive
     get "/login", SessionController, :login
+    post "/logout", SessionController, :logout
     live "/*path", EditorLive
   end
 

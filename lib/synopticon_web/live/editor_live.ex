@@ -91,11 +91,11 @@ defmodule SynopticonWeb.EditorLive do
           >
             Login to edit
           </a>
-          <span :if={@authenticated}>
-            Logged in as {@exe_user["email"]} •
-            <form id="exe-logout-form" action="/__exe.dev/logout" method="post" class="inline">
+          <span :if={@authenticated} class="inline-flex items-center gap-1 whitespace-nowrap">
+            <span>Logged in as {@exe_user["email"]} •</span>
+            <.form for={%{}} id="logout-form" action={~p"/logout"} method="post" class="inline-flex">
               <button type="submit" class="underline underline-offset-4">Logout</button>
-            </form>
+            </.form>
           </span>
         </footer>
       </main>

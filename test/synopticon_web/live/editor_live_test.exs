@@ -62,6 +62,9 @@ defmodule SynopticonWeb.EditorLiveTest do
     refute html =~ ~s(readonly="readonly")
     assert html =~ "live editing"
     assert html =~ "Logged in as writer@example.com •"
+    assert html =~ ~s(class="inline-flex items-center gap-1 whitespace-nowrap")
+    assert html =~ ~s(id="logout-form")
+    assert html =~ ~s(action="/logout")
     assert html =~ "Logout"
   end
 
@@ -80,7 +83,8 @@ defmodule SynopticonWeb.EditorLiveTest do
     refute html =~ "<textarea"
     refute html =~ ~s(readonly="readonly")
     assert html =~ "Logged in as other@example.com •"
-    assert html =~ ~s(action="/__exe.dev/logout")
+    assert html =~ ~s(class="inline-flex items-center gap-1 whitespace-nowrap")
+    assert html =~ ~s(action="/logout")
     assert html =~ "Logout"
 
     render_hook(view, "save", %{"content" => "blocked"})

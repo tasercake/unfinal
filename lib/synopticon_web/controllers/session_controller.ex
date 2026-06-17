@@ -18,6 +18,12 @@ defmodule SynopticonWeb.SessionController do
     end
   end
 
+  def logout(conn, _params) do
+    conn
+    |> clear_session()
+    |> redirect(to: ~p"/")
+  end
+
   defp exe_user_from_headers(conn) do
     with [id] when id != "" <- get_req_header(conn, "x-exedev-userid"),
          [email] when email != "" <- get_req_header(conn, "x-exedev-email") do

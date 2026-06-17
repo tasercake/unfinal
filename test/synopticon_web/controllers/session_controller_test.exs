@@ -68,4 +68,18 @@ defmodule SynopticonWeb.SessionControllerTest do
     assert redirected_to(conn) == "/__exe.dev/login?redirect=%2Flogin%3Freturn_to%3D%252Fnotes"
     refute get_session(conn, :authenticated)
   end
+
+  test "POST /logout clears local session and returns to homepage", %{conn: conn} do
+    conn =
+      conn
+      |> Plug.Test.init_test_session(
+        authenticated: true,
+        exe_user: %{"id" => "usr1234", "email" => "user@example.com"}
+      )
+      |> post(~p"/logout")
+
+    assert redirected_to(conn) == ~p"/"
+    refute get_session(conn, :authenticated)
+    refute get_session(conn, :exe_user)
+  end
 end
