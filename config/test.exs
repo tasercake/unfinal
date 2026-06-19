@@ -1,7 +1,5 @@
 import Config
 
-config :unfinal, :login_mode, :dev_fake
-
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :unfinal, UnfinalWeb.Endpoint,

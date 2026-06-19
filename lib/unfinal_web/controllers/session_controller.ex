@@ -3,42 +3,120 @@ defmodule UnfinalWeb.SessionController do
 
   alias Unfinal.NamespaceStore
 
-  @dev_fake_user %{"id" => "dev-user-1234", "email" => "dev@example.com"}
+  @clerk_session_key :clerk_oauth_session_params
+  @clerk_return_to_key :clerk_return_to
 
   def root(conn, _params), do: redirect(conn, to: ~p"/n")
 
   def login(conn, params) do
     return_to = safe_return_to(Map.get(params, "return_to"))
-
-    case Application.fetch_env!(:unfinal, :login_mode) do
-      :dev_fake ->
-        authenticate(conn, @dev_fake_user, return_to)
-
-      :exe_headers ->
-        case exe_user_from_headers(conn) do
-          {:ok, user} -> authenticate(conn, user, return_to)
-          :error -> redirect(conn, to: exe_login_path(return_to))
-        end
-    end
+    start_clerk_oauth(conn, return_to)
   end
+
+  def clerk_callback(conn, params), do: finish_clerk_oauth(conn, params)
 
   def logout(conn, params) do
     return_to = safe_return_to(Map.get(params, "return_to"))
 
     conn
     |> clear_session()
-    |> put_resp_content_type("text/html")
-    |> html(logout_html(return_to))
+    |> redirect(to: return_to)
   end
 
-  defp exe_user_from_headers(conn) do
-    with [id] when id != "" <- get_req_header(conn, "x-exedev-userid"),
-         [email] when email != "" <- get_req_header(conn, "x-exedev-email") do
-      {:ok, %{"id" => id, "email" => email}}
+  defp start_clerk_oauth(conn, return_to) do
+    with {:ok, config} <- clerk_config(conn),
+         {:ok, %{url: url, session_params: session_params}} <- clerk_oauth().authorize_url(config) do
+      conn
+      |> put_session(@clerk_session_key, session_params)
+      |> put_session(@clerk_return_to_key, return_to)
+      |> redirect(external: url)
     else
-      _ -> :error
+      {:error, error} ->
+        conn
+        |> put_status(:service_unavailable)
+        |> text("Clerk login unavailable: #{format_error(error)}")
     end
   end
+
+  defp finish_clerk_oauth(conn, params) do
+    session_params = get_session(conn, @clerk_session_key)
+    return_to = get_session(conn, @clerk_return_to_key) |> safe_return_to()
+
+    conn =
+      conn
+      |> delete_session(@clerk_session_key)
+      |> delete_session(@clerk_return_to_key)
+
+    with session_params when is_map(session_params) <- session_params,
+         {:ok, config} <- clerk_config(conn),
+         config = Keyword.put(config, :session_params, session_params),
+         {:ok, %{user: user}} <- clerk_oauth().callback(config, params),
+         {:ok, app_user} <- user_from_clerk(user) do
+      authenticate(conn, app_user, return_to)
+    else
+      nil ->
+        auth_failed(conn, "missing login session")
+
+      {:error, :missing_email} ->
+        auth_failed(conn, "missing email")
+
+      {:error, error} ->
+        auth_failed(conn, format_error(error))
+    end
+  end
+
+  defp clerk_config(_conn) do
+    with {:ok, frontend_api_url} <- fetch_env("CLERK_FRONTEND_API_URL"),
+         {:ok, client_id} <- fetch_env("CLERK_OAUTH_CLIENT_ID"),
+         {:ok, client_secret} <- fetch_env("CLERK_OAUTH_CLIENT_SECRET") do
+      redirect_uri =
+        System.get_env("CLERK_OAUTH_REDIRECT_URI") ||
+          url(~p"/auth/clerk/callback")
+
+      scopes = System.get_env("CLERK_OAUTH_SCOPES") || "email profile"
+
+      {:ok,
+       [
+         base_url: String.trim_trailing(frontend_api_url, "/"),
+         openid_configuration_uri: "/.well-known/oauth-authorization-server",
+         client_id: client_id,
+         client_secret: client_secret,
+         redirect_uri: redirect_uri,
+         code_verifier: true,
+         nonce: random_url_token(32),
+         authorization_params: [scope: scopes],
+         http_adapter: Assent.HTTPAdapter.Httpc
+       ]}
+    end
+  end
+
+  defp fetch_env(name) do
+    case System.get_env(name) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _value -> {:error, "missing #{name}"}
+    end
+  end
+
+  defp random_url_token(bytes) do
+    bytes
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
+  end
+
+  defp user_from_clerk(user) when is_map(user) do
+    email = user["email"] || user[:email]
+    id = user["sub"] || user[:sub] || user["user_id"] || user[:user_id]
+
+    cond do
+      !is_binary(email) or email == "" ->
+        {:error, :missing_email}
+
+      true ->
+        {:ok, %{"id" => id || email, "email" => String.downcase(email), "provider" => "clerk"}}
+    end
+  end
+
+  defp user_from_clerk(_user), do: {:error, :missing_email}
 
   defp authenticate(conn, %{"email" => email} = user, _return_to) do
     redirect_to =
@@ -48,9 +126,16 @@ defmodule UnfinalWeb.SessionController do
       end
 
     conn
+    |> configure_session(renew: true)
     |> put_session(:authenticated, true)
-    |> put_session(:exe_user, user)
+    |> put_session(:user, user)
     |> redirect(to: redirect_to)
+  end
+
+  defp auth_failed(conn, reason) do
+    conn
+    |> put_status(:unauthorized)
+    |> text("Clerk login failed: #{reason}")
   end
 
   defp safe_return_to(path) when is_binary(path) do
@@ -66,43 +151,10 @@ defmodule UnfinalWeb.SessionController do
 
   defp safe_return_to(_path), do: ~p"/"
 
-  defp exe_login_path(return_to) do
-    redirect_path = ~p"/login?return_to=#{return_to}"
-    "/__exe.dev/login?redirect=#{URI.encode_www_form(redirect_path)}"
+  defp clerk_oauth do
+    Application.get_env(:unfinal, :clerk_oauth_client, UnfinalWeb.Auth.ClerkOAuth)
   end
 
-  defp logout_html(return_to) do
-    encoded_return_to = return_to |> Jason.encode!() |> String.replace("</", "<\\/")
-
-    """
-    <!doctype html>
-    <html lang=\"en\">
-      <head>
-        <meta charset=\"utf-8\">
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-        <title>Logging out · Unfinal</title>
-      </head>
-      <body class=\"min-h-dvh bg-stone-50 text-stone-950\">
-        <main class=\"grid min-h-dvh place-items-center p-6 text-center\">
-          <p>Logging out…</p>
-        </main>
-        <script>
-          (() => {
-            const fallback = "/";
-            const returnTo = #{encoded_return_to};
-            const safeReturnTo = value => value.startsWith("/") && !value.startsWith("//") ? value : fallback;
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 4000);
-            fetch("/__exe.dev/logout", {method: "POST", credentials: "include", signal: controller.signal})
-              .catch(() => {})
-              .finally(() => {
-                clearTimeout(timeout);
-                window.location.replace(safeReturnTo(returnTo));
-              });
-          })();
-        </script>
-      </body>
-    </html>
-    """
-  end
+  defp format_error(error) when is_binary(error), do: error
+  defp format_error(error), do: inspect(error)
 end

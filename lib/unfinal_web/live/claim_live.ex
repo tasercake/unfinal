@@ -5,7 +5,7 @@ defmodule UnfinalWeb.ClaimLive do
 
   @impl true
   def mount(_params, session, socket) do
-    with %{"authenticated" => true, "exe_user" => %{"email" => email} = user} <- session do
+    with %{"authenticated" => true, "user" => %{"email" => email} = user} <- session do
       {:ok,
        assign(socket,
          user: user,

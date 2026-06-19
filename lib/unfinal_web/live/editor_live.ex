@@ -28,7 +28,7 @@ defmodule UnfinalWeb.EditorLive do
         storage_path: storage_path,
         content: ContentStore.get(storage_path),
         authenticated: Map.get(session, "authenticated", false),
-        exe_user: Map.get(session, "exe_user"),
+        user: Map.get(session, "user"),
         claimed_namespace: claimed_namespace,
         writer?: writer?,
         show_claim_link?: show_claim_link?(session, claimed_namespace),
@@ -73,12 +73,12 @@ defmodule UnfinalWeb.EditorLive do
 
   defp writer?(_path, _session, _claimed_namespace), do: false
 
-  defp superuser?(%{"authenticated" => true, "exe_user" => %{"email" => email}}),
+  defp superuser?(%{"authenticated" => true, "user" => %{"email" => email}}),
     do: Writers.authorized?(email)
 
   defp superuser?(_session), do: false
 
-  defp claimed_namespace(%{"authenticated" => true, "exe_user" => %{"email" => email}}),
+  defp claimed_namespace(%{"authenticated" => true, "user" => %{"email" => email}}),
     do: NamespaceStore.namespace_for_email(email)
 
   defp claimed_namespace(_session), do: nil
@@ -166,7 +166,7 @@ defmodule UnfinalWeb.EditorLive do
               href={~p"/login?return_to=#{@path}"}
             >Login to edit</a>
             <span :if={@authenticated} class="inline-flex items-center gap-1 whitespace-nowrap">
-              <span>Logged in as {@exe_user["email"]} •</span>
+              <span>Logged in as {@user["email"]} •</span>
               <a
                 id="logout-link"
                 class="underline underline-offset-4"
