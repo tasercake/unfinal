@@ -1,6 +1,6 @@
 import Config
 
-config :unfinal, :login_mode, :exe_headers
+config :unfinal, :login_mode, :clerk_oauth
 
 # Note we also include the path to a cache manifest
 # containing the digested version of static files. This

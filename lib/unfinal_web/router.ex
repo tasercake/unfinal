@@ -19,6 +19,7 @@ defmodule UnfinalWeb.Router do
 
     get "/", SessionController, :root
     get "/login", SessionController, :login
+    get "/auth/clerk/callback", SessionController, :clerk_callback
     get "/logout", SessionController, :logout
     post "/logout", SessionController, :logout
     live "/claim", ClaimLive

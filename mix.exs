@@ -19,7 +19,7 @@ defmodule Unfinal.MixProject do
   def application do
     [
       mod: {Unfinal.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :inets]
     ]
   end
 
@@ -51,6 +51,7 @@ defmodule Unfinal.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 0.26"},
       {:jason, "~> 1.2"},
+      {:assent, "~> 0.3.1"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.5"}
     ]
