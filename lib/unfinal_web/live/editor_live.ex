@@ -2,6 +2,7 @@ defmodule UnfinalWeb.EditorLive do
   use UnfinalWeb, :live_view
 
   alias Unfinal.ContentStore
+  alias Unfinal.NamespaceStore
   alias Unfinal.Writers
 
   @blank_page_words ~w(
@@ -14,8 +15,10 @@ defmodule UnfinalWeb.EditorLive do
   def mount(params, session, socket) do
     path = document_path(params)
 
-    if connected?(socket),
-      do: Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic(path))
+    if connected?(socket), do: Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic(path))
+
+    claimed_namespace = claimed_namespace(session)
+    writer? = writer?(path, session, claimed_namespace)
 
     socket =
       assign(socket,
@@ -23,8 +26,11 @@ defmodule UnfinalWeb.EditorLive do
         content: ContentStore.get(path),
         authenticated: Map.get(session, "authenticated", false),
         exe_user: Map.get(session, "exe_user"),
-        writer?: writer?(session),
-        blank_page_paths: if(connected?(socket), do: blank_page_paths(path, session), else: [])
+        claimed_namespace: claimed_namespace,
+        writer?: writer?,
+        show_claim_link?: show_claim_link?(session, claimed_namespace),
+        blank_page_paths:
+          if(connected?(socket), do: blank_page_paths(path, session, claimed_namespace), else: [])
       )
 
     {:ok, socket}
@@ -47,23 +53,44 @@ defmodule UnfinalWeb.EditorLive do
     {:noreply, assign(socket, :content, content)}
   end
 
-  defp document_path(%{"path" => parts}), do: "/" <> Enum.join(parts, "/")
-  defp document_path(_params), do: "/"
+  defp document_path(%{"path" => parts}), do: "/n/" <> Enum.join(parts, "/")
+  defp document_path(_params), do: "/n"
 
-  defp writer?(%{"authenticated" => true, "exe_user" => %{"email" => email}}),
+  defp writer?("/n", session, _claimed_namespace), do: superuser?(session)
+
+  defp writer?(path, _session, claimed_namespace) when is_binary(claimed_namespace) do
+    path == "/n/#{claimed_namespace}" or String.starts_with?(path, "/n/#{claimed_namespace}/")
+  end
+
+  defp writer?(_path, _session, _claimed_namespace), do: false
+
+  defp superuser?(%{"authenticated" => true, "exe_user" => %{"email" => email}}),
     do: Writers.authorized?(email)
 
-  defp writer?(_session), do: false
+  defp superuser?(_session), do: false
 
-  defp blank_page_paths("/", session) do
-    if writer?(session) do
-      blank_page_path_generator().()
+  defp claimed_namespace(%{"authenticated" => true, "exe_user" => %{"id" => user_id}}),
+    do: NamespaceStore.namespace_for_user(user_id)
+
+  defp claimed_namespace(_session), do: nil
+
+  defp show_claim_link?(%{"authenticated" => true}, nil), do: true
+  defp show_claim_link?(_session, _claimed_namespace), do: false
+
+  defp blank_page_paths(path, session, claimed_namespace) when is_binary(claimed_namespace) do
+    if path == "/n/#{claimed_namespace}" and Map.get(session, "authenticated", false) do
+      Enum.map(blank_page_path_generator().(), &namespace_path(claimed_namespace, &1))
     else
       []
     end
   end
 
-  defp blank_page_paths(_path, _session), do: []
+  defp blank_page_paths(_path, _session, _claimed_namespace), do: []
+
+  defp namespace_path(namespace, path) do
+    suffix = path |> String.trim() |> String.trim_leading("/")
+    "/n/#{namespace}/#{suffix}"
+  end
 
   defp blank_page_path_generator do
     Application.get_env(
@@ -77,7 +104,7 @@ defmodule UnfinalWeb.EditorLive do
     @blank_page_words
     |> Enum.take_random(10)
     |> Enum.chunk_every(2)
-    |> Enum.map(fn [first, second] -> "/#{first}#{second}" end)
+    |> Enum.map(fn [first, second] -> "#{first}#{second}" end)
   end
 
   def blank_page_words, do: @blank_page_words
@@ -125,21 +152,25 @@ defmodule UnfinalWeb.EditorLive do
               :if={!@authenticated}
               class="underline underline-offset-4"
               href={~p"/login?return_to=#{@path}"}
-            >
-              Login to edit
-            </a>
+            >Login to edit</a>
             <span :if={@authenticated} class="inline-flex items-center gap-1 whitespace-nowrap">
               <span>Logged in as {@exe_user["email"]} •</span>
               <a
                 id="logout-link"
                 class="underline underline-offset-4"
                 href={~p"/logout?return_to=#{@path}"}
-              >
-                Logout
-              </a>
+              >Logout</a>
             </span>
           </footer>
         </main>
+
+        <aside
+          :if={@show_claim_link?}
+          id="claim-page-link"
+          class="hidden py-6 text-left text-sm text-stone-600 lg:block"
+        >
+          <a class="underline underline-offset-4 hover:text-stone-950" href={~p"/claim"}>Claim your page</a>
+        </aside>
 
         <aside
           :if={@blank_page_paths != []}

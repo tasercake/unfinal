@@ -18,7 +18,7 @@ defmodule UnfinalWeb.SessionControllerTest do
 
     conn = get(conn, ~p"/login")
 
-    assert redirected_to(conn) == ~p"/"
+    assert redirected_to(conn) == ~p"/claim"
     assert get_session(conn, :authenticated) == true
 
     assert get_session(conn, :exe_user) == %{
@@ -27,12 +27,12 @@ defmodule UnfinalWeb.SessionControllerTest do
            }
   end
 
-  test "GET /login in dev fake mode redirects back to return_to", %{conn: conn} do
+  test "GET /login in dev fake mode always redirects to claim", %{conn: conn} do
     Application.put_env(:unfinal, :login_mode, :dev_fake)
 
-    conn = get(conn, ~p"/login?return_to=/notes")
+    conn = get(conn, ~p"/login?return_to=/n/notes")
 
-    assert redirected_to(conn) == "/notes"
+    assert redirected_to(conn) == "/claim"
     assert get_session(conn, :authenticated) == true
   end
 
@@ -42,20 +42,20 @@ defmodule UnfinalWeb.SessionControllerTest do
     for unsafe <- ["//evil.example", "https://evil.example/path"] do
       conn = get(conn, ~p"/login?return_to=#{unsafe}")
 
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/claim"
     end
   end
 
-  test "GET /login with exe headers signs in and redirects back", %{conn: conn} do
+  test "GET /login with exe headers signs in and redirects to claim", %{conn: conn} do
     Application.put_env(:unfinal, :login_mode, :exe_headers)
 
     conn =
       conn
       |> put_req_header("x-exedev-userid", "usr1234")
       |> put_req_header("x-exedev-email", "user@example.com")
-      |> get(~p"/login?return_to=/notes")
+      |> get(~p"/login?return_to=/n/notes")
 
-    assert redirected_to(conn) == "/notes"
+    assert redirected_to(conn) == "/claim"
     assert get_session(conn, :authenticated) == true
     assert get_session(conn, :exe_user) == %{"id" => "usr1234", "email" => "user@example.com"}
   end

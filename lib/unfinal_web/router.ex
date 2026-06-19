@@ -17,11 +17,13 @@ defmodule UnfinalWeb.Router do
   scope "/", UnfinalWeb do
     pipe_through :browser
 
-    live "/", EditorLive
+    get "/", SessionController, :root
     get "/login", SessionController, :login
     get "/logout", SessionController, :logout
     post "/logout", SessionController, :logout
-    live "/*path", EditorLive
+    live "/claim", ClaimLive
+    live "/n", EditorLive
+    live "/n/*path", EditorLive
   end
 
   # Other scopes may use custom stacks.
