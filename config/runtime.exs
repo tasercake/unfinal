@@ -40,7 +40,12 @@ if config_env() == :prod do
 
   config :unfinal, UnfinalWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
-    check_origin: ["https://unfinal.page"],
+    check_origin: [
+      "https://unfinal.page",
+      "https://unfinal.onrender.com",
+      "https://synopticon.exe.xyz",
+      "https://unfinal.exe.xyz"
+    ],
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
