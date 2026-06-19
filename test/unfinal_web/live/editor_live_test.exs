@@ -169,7 +169,7 @@ defmodule UnfinalWeb.EditorLiveTest do
   defp logged_in(conn, id, email) do
     Plug.Test.init_test_session(conn,
       authenticated: true,
-      exe_user: %{"id" => id, "email" => email}
+      user: %{"id" => id, "email" => email}
     )
   end
 

@@ -21,7 +21,7 @@ cp .env.example .env
 mix phx.server
 ```
 
-Open <http://localhost:3000/>.
+Open <http://localhost:4000/>.
 
 ## Persistence
 
@@ -49,7 +49,7 @@ In Clerk Dashboard → OAuth applications, create app with redirect URI matching
 
 ```bash
 mkdir -p config/local
-echo dev@example.com > config/local/writers.txt
+echo you@example.com > config/local/writers.txt
 ```
 
 One email per line. `config/local/` is git-ignored.
