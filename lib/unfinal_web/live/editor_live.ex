@@ -101,6 +101,9 @@ defmodule UnfinalWeb.EditorLive do
     "/n/#{namespace}/#{suffix}"
   end
 
+  defp display_blank_page_path("/n" <> path), do: path
+  defp display_blank_page_path(path), do: path
+
   defp blank_page_path_generator do
     Application.get_env(
       :unfinal,
@@ -192,7 +195,9 @@ defmodule UnfinalWeb.EditorLive do
           <nav aria-label="Blank pages">
             <ul class="space-y-2">
               <li :for={path <- @blank_page_paths}>
-                <a class="underline underline-offset-4 hover:text-stone-950" href={path}>{path}</a>
+                <a class="underline underline-offset-4 hover:text-stone-950" href={path}>
+                  {display_blank_page_path(path)}
+                </a>
               </li>
             </ul>
           </nav>

@@ -144,8 +144,11 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert rendered =~ "Write somewhere new"
     assert rendered =~ ~s(href="/n/alpha/bluebird")
 
-    assert rendered |> Floki.parse_document!() |> Floki.find("#blank-page-links a") |> length() ==
-             5
+    links = rendered |> Floki.parse_document!() |> Floki.find("#blank-page-links a")
+
+    assert length(links) == 5
+    assert links |> Floki.text() =~ "/alpha/bluebird"
+    refute links |> Floki.text() =~ "/n/alpha/bluebird"
   end
 
   test "generated blank page paths join exactly two dictionary words" do
