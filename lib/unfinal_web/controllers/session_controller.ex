@@ -1,6 +1,8 @@
 defmodule UnfinalWeb.SessionController do
   use UnfinalWeb, :controller
 
+  alias Unfinal.NamespaceStore
+
   @dev_fake_user %{"id" => "dev-user-1234", "email" => "dev@example.com"}
 
   def root(conn, _params), do: redirect(conn, to: ~p"/n")
@@ -38,11 +40,17 @@ defmodule UnfinalWeb.SessionController do
     end
   end
 
-  defp authenticate(conn, user, _return_to) do
+  defp authenticate(conn, %{"email" => email} = user, _return_to) do
+    redirect_to =
+      case NamespaceStore.namespace_for_email(email) do
+        namespace when is_binary(namespace) -> "/n/#{namespace}"
+        nil -> ~p"/claim"
+      end
+
     conn
     |> put_session(:authenticated, true)
     |> put_session(:exe_user, user)
-    |> redirect(to: ~p"/claim")
+    |> redirect(to: redirect_to)
   end
 
   defp safe_return_to(path) when is_binary(path) do

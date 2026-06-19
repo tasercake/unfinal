@@ -1,10 +1,32 @@
 defmodule UnfinalWeb.SessionControllerTest do
   use UnfinalWeb.ConnCase
 
+  alias Unfinal.NamespaceStore
+
   setup do
     original_mode = Application.get_env(:unfinal, :login_mode)
+    previous_data_dir = System.get_env("UNFINAL_DATA_DIR")
+
+    data_dir =
+      Path.join(
+        System.tmp_dir!(),
+        "unfinal-session-controller-#{System.unique_integer([:positive])}"
+      )
+
+    System.put_env("UNFINAL_DATA_DIR", data_dir)
+    File.rm_rf!(data_dir)
+    NamespaceStore.clear()
 
     on_exit(fn ->
+      NamespaceStore.clear()
+      File.rm_rf!(data_dir)
+
+      if previous_data_dir do
+        System.put_env("UNFINAL_DATA_DIR", previous_data_dir)
+      else
+        System.delete_env("UNFINAL_DATA_DIR")
+      end
+
       if is_nil(original_mode) do
         Application.delete_env(:unfinal, :login_mode)
       else
@@ -27,12 +49,22 @@ defmodule UnfinalWeb.SessionControllerTest do
            }
   end
 
-  test "GET /login in dev fake mode always redirects to claim", %{conn: conn} do
+  test "GET /login in dev fake mode redirects unclaimed users to claim", %{conn: conn} do
     Application.put_env(:unfinal, :login_mode, :dev_fake)
 
     conn = get(conn, ~p"/login?return_to=/n/notes")
 
     assert redirected_to(conn) == "/claim"
+    assert get_session(conn, :authenticated) == true
+  end
+
+  test "GET /login in dev fake mode redirects claimed users to their namespace", %{conn: conn} do
+    Application.put_env(:unfinal, :login_mode, :dev_fake)
+    :ok = NamespaceStore.claim("alpha", %{"email" => "dev@example.com"})
+
+    conn = get(conn, ~p"/login?return_to=/n/notes")
+
+    assert redirected_to(conn) == "/n/alpha"
     assert get_session(conn, :authenticated) == true
   end
 
@@ -46,7 +78,9 @@ defmodule UnfinalWeb.SessionControllerTest do
     end
   end
 
-  test "GET /login with exe headers signs in and redirects to claim", %{conn: conn} do
+  test "GET /login with exe headers signs in and redirects unclaimed users to claim", %{
+    conn: conn
+  } do
     Application.put_env(:unfinal, :login_mode, :exe_headers)
 
     conn =
@@ -58,6 +92,20 @@ defmodule UnfinalWeb.SessionControllerTest do
     assert redirected_to(conn) == "/claim"
     assert get_session(conn, :authenticated) == true
     assert get_session(conn, :exe_user) == %{"id" => "usr1234", "email" => "user@example.com"}
+  end
+
+  test "GET /login with exe headers redirects claimed users to their namespace", %{conn: conn} do
+    Application.put_env(:unfinal, :login_mode, :exe_headers)
+    :ok = NamespaceStore.claim("beta", %{"email" => "user@example.com"})
+
+    conn =
+      conn
+      |> put_req_header("x-exedev-userid", "usr1234")
+      |> put_req_header("x-exedev-email", "user@example.com")
+      |> get(~p"/login?return_to=/n/notes")
+
+    assert redirected_to(conn) == "/n/beta"
+    assert get_session(conn, :authenticated) == true
   end
 
   test "GET /login without exe headers redirects to exe login with encoded return path", %{
