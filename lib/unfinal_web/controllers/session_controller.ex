@@ -3,6 +3,8 @@ defmodule UnfinalWeb.SessionController do
 
   @dev_fake_user %{"id" => "dev-user-1234", "email" => "dev@example.com"}
 
+  def root(conn, _params), do: redirect(conn, to: ~p"/n")
+
   def login(conn, params) do
     return_to = safe_return_to(Map.get(params, "return_to"))
 
@@ -36,11 +38,11 @@ defmodule UnfinalWeb.SessionController do
     end
   end
 
-  defp authenticate(conn, user, return_to) do
+  defp authenticate(conn, user, _return_to) do
     conn
     |> put_session(:authenticated, true)
     |> put_session(:exe_user, user)
-    |> redirect(to: return_to)
+    |> redirect(to: ~p"/claim")
   end
 
   defp safe_return_to(path) when is_binary(path) do
