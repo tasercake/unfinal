@@ -8,7 +8,7 @@ Unfinal is a tiny writing space where each URL is a live document. Visitors can 
 
 ## Tech Stack
 
-Elixir/Phoenix LiveView app with Phoenix PubSub, signed session-cookie auth, `.env` config, and in-memory server state only.
+Elixir/Phoenix LiveView app with Phoenix PubSub, Clerk OAuth/OIDC auth stored in signed session cookies, `.env` config, and S3-compatible object storage for document persistence.
 
 ## Development rules
 
