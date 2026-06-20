@@ -22,11 +22,15 @@ defmodule UnfinalWeb.EditorLive do
     claimed_namespace = claimed_namespace(session)
     writer? = writer?(path, session, claimed_namespace)
 
+    document = ContentStore.get(storage_path)
+
     socket =
       assign(socket,
         path: path,
         storage_path: storage_path,
-        content: ContentStore.get(storage_path),
+        content: document.content,
+        etag: document.etag,
+        revision: document.revision,
         authenticated: Map.get(session, "authenticated", false),
         user: Map.get(session, "user"),
         claimed_namespace: claimed_namespace,
@@ -43,20 +47,60 @@ defmodule UnfinalWeb.EditorLive do
   def handle_event(
         "save",
         %{"content" => content},
-        %{assigns: %{writer?: true, storage_path: storage_path}} = socket
+        %{
+          assigns: %{
+            writer?: true,
+            storage_path: storage_path,
+            etag: base_etag,
+            revision: base_revision
+          }
+        } = socket
       ) do
-    ContentStore.set(storage_path, content)
-    {:noreply, assign(socket, :content, content)}
+    case ContentStore.put(storage_path, content, base_etag, base_revision) do
+      {:ok, document} ->
+        {:noreply,
+         assign(socket,
+           content: document.content,
+           etag: document.etag,
+           revision: document.revision
+         )}
+
+      {:stale, document} ->
+        {:noreply,
+         assign(socket,
+           content: document.content,
+           etag: document.etag,
+           revision: document.revision
+         )}
+
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("save", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_info(
-        {:content_updated, storage_path, content},
+        {:content_updated, storage_path, %{revision: incoming_revision}},
+        %{assigns: %{storage_path: storage_path, revision: current_revision}} = socket
+      )
+      when incoming_revision <= current_revision do
+    {:noreply, socket}
+  end
+
+  def handle_info(
+        {:content_updated, storage_path, %{etag: _etag, revision: _revision}},
         %{assigns: %{storage_path: storage_path}} = socket
       ) do
-    {:noreply, assign(socket, :content, content)}
+    document = ContentStore.get(storage_path)
+
+    {:noreply,
+     assign(socket,
+       content: document.content,
+       etag: document.etag,
+       revision: document.revision
+     )}
   end
 
   defp url_path(%{"path" => parts}), do: "/n/" <> Enum.join(parts, "/")

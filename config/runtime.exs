@@ -20,6 +20,13 @@ if System.get_env("PHX_SERVER") do
   config :unfinal, UnfinalWeb.Endpoint, server: true
 end
 
+config :unfinal, :s3,
+  bucket: System.get_env("UNFINAL_S3_BUCKET"),
+  endpoint: System.get_env("UNFINAL_S3_ENDPOINT"),
+  access_key_id: System.get_env("UNFINAL_S3_ACCESS_KEY_ID"),
+  secret_access_key: System.get_env("UNFINAL_S3_SECRET_ACCESS_KEY"),
+  region: System.get_env("UNFINAL_S3_REGION", "auto")
+
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

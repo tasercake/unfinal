@@ -4,73 +4,55 @@ defmodule Unfinal.ContentStoreTest do
   alias Unfinal.ContentStore
 
   setup do
-    previous_data_dir = System.get_env("UNFINAL_DATA_DIR")
-
-    data_dir =
-      Path.join(
-        System.tmp_dir!(),
-        "unfinal-content-store-#{System.unique_integer([:positive])}"
-      )
-
-    System.put_env("UNFINAL_DATA_DIR", data_dir)
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
     ContentStore.clear()
 
     on_exit(fn ->
       ContentStore.clear()
-      File.rm_rf!(data_dir)
-
-      if previous_data_dir do
-        System.put_env("UNFINAL_DATA_DIR", previous_data_dir)
-      else
-        System.delete_env("UNFINAL_DATA_DIR")
-      end
+      Application.delete_env(:unfinal, :object_store_adapter)
     end)
-
-    %{data_dir: data_dir}
   end
 
-  test "paths are empty by default" do
-    assert ContentStore.get("/") == ""
-    assert ContentStore.get("/notes") == ""
+  test "missing paths return empty document with nil etag and revision zero" do
+    assert %ContentStore.Document{content: "", etag: nil, revision: 0} = ContentStore.get("/")
   end
 
-  test "stores latest content per path in memory" do
-    ContentStore.set("/notes", "hello")
-    ContentStore.set("/other", "world")
+  test "creates and updates documents with conditional revisions" do
+    assert %{etag: nil, revision: 0} = base = ContentStore.get("/notes")
 
-    assert ContentStore.get("/notes") == "hello"
-    assert ContentStore.get("/other") == "world"
-    assert ContentStore.get("/") == ""
+    assert {:ok, created} = ContentStore.put("/notes", "hello", base.etag, base.revision)
+    assert %ContentStore.Document{content: "hello", etag: etag1, revision: 1} = created
+    assert is_binary(etag1)
+
+    assert {:ok, updated} = ContentStore.put("/notes", "world", created.etag, created.revision)
+    assert %ContentStore.Document{content: "world", revision: 2} = updated
+    assert updated.etag != etag1
+    assert ContentStore.get("/notes") == updated
   end
 
-  test "broadcasts content changes only on path topic" do
+  test "stale writes return latest document and do not clobber" do
+    base = ContentStore.get("/notes")
+    assert {:ok, first} = ContentStore.put("/notes", "first", base.etag, base.revision)
+    assert {:ok, second} = ContentStore.put("/notes", "second", first.etag, first.revision)
+
+    assert {:stale, latest} = ContentStore.put("/notes", "stale body", first.etag, first.revision)
+    assert latest == second
+    assert ContentStore.get("/notes").content == "second"
+  end
+
+  test "broadcasts accepted changes with revision and etag only on path topic" do
     Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic("/notes"))
 
-    ContentStore.set("/other", "ignored")
-    ContentStore.set("/notes", "live")
+    base = ContentStore.get("/notes")
+    assert {:ok, doc} = ContentStore.put("/notes", "live", base.etag, base.revision)
 
-    assert_receive {:content_updated, "/notes", "live"}
-    refute_receive {:content_updated, "/other", "ignored"}
+    assert_receive {:content_updated, "/notes", %{revision: 1, etag: etag}}
+    assert etag == doc.etag
+    refute_receive {:content_updated, "/other", _}
   end
 
-  test "persists content to sha256 path files", %{data_dir: data_dir} do
-    ContentStore.set("/notes", "saved")
-
+  test "object keys use documents prefix and sha256 path" do
     hash = :crypto.hash(:sha256, "/notes") |> Base.encode16(case: :lower)
-    path = Path.join([data_dir, "documents", hash <> ".txt"])
-
-    assert File.read!(path) == "saved"
-  end
-
-  test "loads persisted content after memory is cleared", %{data_dir: data_dir} do
-    hash = :crypto.hash(:sha256, "/notes") |> Base.encode16(case: :lower)
-    path = Path.join([data_dir, "documents", hash <> ".txt"])
-    File.mkdir_p!(Path.dirname(path))
-    File.write!(path, "from disk")
-
-    assert ContentStore.get("/notes") == "from disk"
-
-    File.write!(path, "changed on disk")
-    assert ContentStore.get("/notes") == "from disk"
+    assert ContentStore.object_key("/notes") == "documents/#{hash}.txt"
   end
 end

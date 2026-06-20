@@ -5,34 +5,21 @@ defmodule UnfinalWeb.EditorLiveTest do
   alias Unfinal.NamespaceStore
 
   setup do
-    previous_data_dir = System.get_env("UNFINAL_DATA_DIR")
-
-    data_dir =
-      Path.join(System.tmp_dir!(), "unfinal-editor-live-#{System.unique_integer([:positive])}")
-
-    System.put_env("UNFINAL_DATA_DIR", data_dir)
-    File.rm_rf!(data_dir)
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
     ContentStore.clear()
     NamespaceStore.clear()
 
     on_exit(fn ->
       ContentStore.clear()
       NamespaceStore.clear()
-      File.rm_rf!(data_dir)
-
-      if previous_data_dir do
-        System.put_env("UNFINAL_DATA_DIR", previous_data_dir)
-      else
-        System.delete_env("UNFINAL_DATA_DIR")
-      end
     end)
 
-    {:ok, data_dir: data_dir}
+    :ok
   end
 
   test "redirects slash to /n and renders storage paths without /n prefix", %{conn: conn} do
-    ContentStore.set("/", "root text")
-    ContentStore.set("/existing", "saved text")
+    save_document("/", "root text")
+    save_document("/existing", "saved text")
 
     assert {:error, {:redirect, %{to: "/n"}}} = live(conn, ~p"/")
     {:ok, root, root_html} = live(conn, ~p"/n")
@@ -61,14 +48,14 @@ defmodule UnfinalWeb.EditorLiveTest do
   end
 
   test "readonly document does not add template whitespace to content", %{conn: conn} do
-    ContentStore.set("/plain", "hello")
+    save_document("/plain", "hello")
 
     {:ok, _view, html} = live(conn, "/n/plain")
 
     assert html =~ ~r/<article[^>]*id="readonly-document"[^>]*>hello<\/article>/
   end
 
-  test "superuser edits only /n root", %{conn: conn, data_dir: data_dir} do
+  test "superuser edits only /n root", %{conn: conn} do
     with_writers("writer@example.com")
     conn = logged_in(conn, "writer", "writer@example.com")
 
@@ -81,17 +68,12 @@ defmodule UnfinalWeb.EditorLiveTest do
     root |> form("form[phx-change=save]", %{content: "root body"}) |> render_change()
     render_hook(child, "save", %{"content" => "blocked"})
 
-    assert ContentStore.get("/") == "root body"
-    assert ContentStore.get("/n") == ""
-    assert ContentStore.get("/alpha") == ""
-    assert File.read!(document_file(data_dir, "/")) == "root body"
-    refute File.exists?(document_file(data_dir, "/n"))
+    assert ContentStore.get("/").content == "root body"
+    assert ContentStore.get("/n").content == ""
+    assert ContentStore.get("/alpha").content == ""
   end
 
-  test "namespace owner edits own namespace and descendants but not root", %{
-    conn: conn,
-    data_dir: data_dir
-  } do
+  test "namespace owner edits own namespace and descendants but not root", %{conn: conn} do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
     conn = logged_in(conn, "different-owner-id", "owner@example.com")
 
@@ -110,15 +92,12 @@ defmodule UnfinalWeb.EditorLiveTest do
     render_hook(root, "save", %{"content" => "blocked"})
     render_hook(other, "save", %{"content" => "blocked"})
 
-    assert ContentStore.get("/alpha") == "home"
-    assert ContentStore.get("/alpha/page") == "child"
-    assert ContentStore.get("/") == ""
-    assert ContentStore.get("/beta") == ""
-    assert ContentStore.get("/n/alpha") == ""
-    assert ContentStore.get("/n/alpha/page") == ""
-    assert File.read!(document_file(data_dir, "/alpha")) == "home"
-    assert File.read!(document_file(data_dir, "/alpha/page")) == "child"
-    refute File.exists?(document_file(data_dir, "/n/alpha"))
+    assert ContentStore.get("/alpha").content == "home"
+    assert ContentStore.get("/alpha/page").content == "child"
+    assert ContentStore.get("/").content == ""
+    assert ContentStore.get("/beta").content == ""
+    assert ContentStore.get("/n/alpha").content == ""
+    assert ContentStore.get("/n/alpha/page").content == ""
   end
 
   test "unclaimed logged-in user sees claim link instead of blank page links", %{conn: conn} do
@@ -161,9 +140,9 @@ defmodule UnfinalWeb.EditorLiveTest do
            end)
   end
 
-  defp document_file(data_dir, path) do
-    hash = :crypto.hash(:sha256, path) |> Base.encode16(case: :lower)
-    Path.join([data_dir, "documents", hash <> ".txt"])
+  defp save_document(path, content) do
+    base = ContentStore.get(path)
+    assert {:ok, _document} = ContentStore.put(path, content, base.etag, base.revision)
   end
 
   defp logged_in(conn, id, email) do

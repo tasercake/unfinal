@@ -9,8 +9,8 @@ Each URL is a live document. Visitors can read in real time; configured authenti
 - Elixir/Phoenix LiveView + Phoenix PubSub for live updates.
 - Clerk OAuth/OIDC login + writer allowlist from `config/local/writers.txt`.
 - One live document per path (`/`, `/notes`, `/foo/bar`, etc.).
-- No database; documents persist as plain-text files.
-- `UNFINAL_DATA_DIR` defaults to `./.data`.
+- No database; documents persist as plain-text objects in S3-compatible storage.
+- Cloudflare R2-compatible conditional writes prevent stale clobbers.
 - `.env` auto-load for local env vars.
 
 ## Run
@@ -25,9 +25,19 @@ Open <http://localhost:4000/>.
 
 ## Persistence
 
-Documents are stored in `UNFINAL_DATA_DIR/documents`, where `UNFINAL_DATA_DIR` defaults to `./.data`.
+Documents are stored in S3-compatible object storage, intended for Cloudflare R2.
 
-Each document is a single `sha256(path).txt` file; there is no database or metadata.
+Required env vars:
+
+```bash
+UNFINAL_S3_BUCKET=...
+UNFINAL_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+UNFINAL_S3_ACCESS_KEY_ID=...
+UNFINAL_S3_SECRET_ACCESS_KEY=...
+UNFINAL_S3_REGION=auto
+```
+
+Each document key is `documents/#{sha256(path)}.txt`. Writes use S3 conditional `PUT` (`If-None-Match: *` for create, `If-Match: <etag>` for update) plus `unfinal-revision` metadata. ETags are opaque identity tokens, not ordering values.
 
 ## Clerk OAuth/OIDC
 
