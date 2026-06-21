@@ -172,7 +172,7 @@ defmodule UnfinalWeb.EditorLive do
       <div class="mx-auto grid h-full min-h-0 w-full max-w-[76rem] grid-cols-1 gap-4 px-4 lg:grid-cols-[12rem_minmax(0,52rem)_12rem]">
         <div class="hidden lg:block" aria-hidden="true"></div>
 
-        <main class="flex h-full min-h-0 w-full max-w-[52rem] flex-col gap-4 py-4 sm:py-6">
+        <main class="flex h-full min-h-0 w-full max-w-[52rem] flex-col gap-4 justify-self-center py-4 sm:py-6">
           <header class="shrink-0 border-b border-stone-200 pb-4">
             <h1 class="text-3xl font-semibold tracking-tight">Unfinal</h1>
           </header>
