@@ -84,7 +84,7 @@ defmodule UnfinalWeb.SessionControllerTest do
       conn
       |> Plug.Test.init_test_session(
         clerk_oauth_session_params: %{state: "fake", nonce: "fake"},
-        clerk_return_to: "/n/notes"
+        clerk_return_to: nil
       )
       |> get(~p"/auth/clerk/callback?code=ok&state=fake")
 
