@@ -18,7 +18,8 @@ defmodule Unfinal.FakeObjectStore do
           path: path,
           content: content,
           etag: "etag-#{System.unique_integer([:positive])}",
-          revision: base_revision + 1
+          revision: base_revision + 1,
+          write_id: "write-#{System.unique_integer([:positive])}"
         }
 
         {{:ok, doc}, Map.put(state, path, doc)}
@@ -43,5 +44,6 @@ defmodule Unfinal.FakeObjectStore do
 
   def start_link(_opts), do: Agent.start_link(fn -> %{} end, name: __MODULE__)
 
-  defp missing(path), do: %Document{path: path, content: "", etag: nil, revision: 0}
+  defp missing(path),
+    do: %Document{path: path, content: "", etag: nil, revision: 0, write_id: nil}
 end

@@ -50,7 +50,8 @@ defmodule Unfinal.FilesystemObjectStore do
       path: path,
       content: content,
       etag: etag(content, revision),
-      revision: revision
+      revision: revision,
+      write_id: write_id()
     }
 
     file_path = envelope_path(path)
@@ -67,14 +68,21 @@ defmodule Unfinal.FilesystemObjectStore do
     with {:ok, envelope} <- Jason.decode(json),
          {:ok, content} <- fetch_string(envelope, "content"),
          {:ok, etag} <- fetch_string(envelope, "etag"),
-         {:ok, revision} <- fetch_revision(envelope) do
-      {:ok, %Document{path: path, content: content, etag: etag, revision: revision}}
+         {:ok, revision} <- fetch_revision(envelope),
+         {:ok, write_id} <- fetch_optional_string(envelope, "write_id") do
+      {:ok,
+       %Document{path: path, content: content, etag: etag, revision: revision, write_id: write_id}}
     end
   end
 
   @spec encode_document(Document.t()) :: {:ok, String.t()} | {:error, term()}
   defp encode_document(%Document{} = doc) do
-    Jason.encode(%{"content" => doc.content, "etag" => doc.etag, "revision" => doc.revision})
+    Jason.encode(%{
+      "content" => doc.content,
+      "etag" => doc.etag,
+      "revision" => doc.revision,
+      "write_id" => doc.write_id
+    })
   end
 
   @spec fetch_string(map(), String.t()) ::
@@ -82,6 +90,16 @@ defmodule Unfinal.FilesystemObjectStore do
   defp fetch_string(envelope, key) do
     case Map.fetch(envelope, key) do
       {:ok, value} when is_binary(value) -> {:ok, value}
+      _ -> {:error, {:invalid_envelope, key}}
+    end
+  end
+
+  @spec fetch_optional_string(map(), String.t()) ::
+          {:ok, String.t() | nil} | {:error, {:invalid_envelope, String.t()}}
+  defp fetch_optional_string(envelope, key) do
+    case Map.fetch(envelope, key) do
+      {:ok, value} when is_binary(value) or is_nil(value) -> {:ok, value}
+      :error -> {:ok, nil}
       _ -> {:error, {:invalid_envelope, key}}
     end
   end
@@ -131,4 +149,7 @@ defmodule Unfinal.FilesystemObjectStore do
 
   @spec unique() :: String.t()
   defp unique, do: System.unique_integer([:positive, :monotonic]) |> Integer.to_string()
+
+  @spec write_id() :: String.t()
+  defp write_id, do: Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 end
