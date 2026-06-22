@@ -58,7 +58,7 @@ defmodule Unfinal.ContentStore do
   def handle_call({:get, path}, _from, cache) do
     case adapter().get(path) do
       {:ok, doc} -> {:reply, doc, Map.put(cache, path, doc)}
-      {:error, reason} -> {:stop, {:object_store_read_failed, reason}, cache}
+      {:error, _reason} -> {:reply, Map.get(cache, path, missing(path)), cache}
     end
   end
 
