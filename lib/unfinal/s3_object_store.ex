@@ -6,6 +6,8 @@ defmodule Unfinal.S3ObjectStore do
   alias Unfinal.ContentStore
   alias Unfinal.ContentStore.Document
 
+  @write_id_header "x-amz-meta-unfinal-write-id"
+
   @impl true
   def get(path) do
     key = ContentStore.object_key(path)
@@ -17,7 +19,8 @@ defmodule Unfinal.S3ObjectStore do
            path: path,
            content: body,
            etag: header(headers, "etag"),
-           revision: revision(headers)
+           revision: revision(headers),
+           write_id: header(headers, @write_id_header)
          }}
 
       {:ok, 404, _headers, _body} ->
@@ -47,9 +50,11 @@ defmodule Unfinal.S3ObjectStore do
 
   defp put_conditional(path, content, condition_headers, next_revision) do
     key = ContentStore.object_key(path)
+    write_id = write_id()
 
     headers = [
-      {"x-amz-meta-unfinal-revision", Integer.to_string(next_revision)} | condition_headers
+      {"x-amz-meta-unfinal-revision", Integer.to_string(next_revision)},
+      {@write_id_header, write_id} | condition_headers
     ]
 
     case request(:put, key, headers, content) do
@@ -59,7 +64,8 @@ defmodule Unfinal.S3ObjectStore do
            path: path,
            content: content,
            etag: header(headers, "etag"),
-           revision: next_revision
+           revision: next_revision,
+           write_id: write_id
          }}
 
       {:ok, status, _headers, _body} when status in [409, 412] ->
@@ -69,7 +75,20 @@ defmodule Unfinal.S3ObjectStore do
         {:error, {:http_status, status, body}}
 
       {:error, reason} ->
-        {:error, reason}
+        reconcile_ambiguous_put(path, write_id, reason)
+    end
+  end
+
+  defp reconcile_ambiguous_put(path, write_id, put_reason) do
+    case get(path) do
+      {:ok, %Document{write_id: ^write_id} = latest} ->
+        {:ok, latest}
+
+      {:ok, latest} ->
+        {:error, {:ambiguous_put_unresolved, put: put_reason, latest: latest}}
+
+      {:error, get_reason} ->
+        {:error, {:ambiguous_put_unresolved, put: put_reason, latest: {:error, get_reason}}}
     end
   end
 
@@ -84,6 +103,13 @@ defmodule Unfinal.S3ObjectStore do
   end
 
   defp request(method, key, headers, body) do
+    case Keyword.get(Application.get_env(:unfinal, :s3, []), :request_fun) do
+      nil -> http_request(method, key, headers, body)
+      request_fun when is_function(request_fun, 4) -> request_fun.(method, key, headers, body)
+    end
+  end
+
+  defp http_request(method, key, headers, body) do
     config = config!()
     uri = URI.parse(config.endpoint)
     path = "/#{config.bucket}/#{key}"
@@ -192,6 +218,8 @@ defmodule Unfinal.S3ObjectStore do
 
   defp sha256_hex(data), do: :crypto.hash(:sha256, data) |> Base.encode16(case: :lower)
   defp hmac(key, data), do: :crypto.mac(:hmac, :sha256, key, data)
+
+  defp write_id, do: Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 
   defp signing_key(secret, date, region),
     do: hmac(hmac(hmac(hmac("AWS4" <> secret, date), region), "s3"), "aws4_request")

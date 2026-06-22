@@ -10,14 +10,15 @@ defmodule Unfinal.ContentStore do
 
   defmodule Document do
     @moduledoc "Object-store document snapshot."
-    @enforce_keys [:path, :content, :etag, :revision]
-    defstruct [:path, :content, :etag, :revision]
+    @enforce_keys [:path, :content, :etag, :revision, :write_id]
+    defstruct [:path, :content, :etag, :revision, :write_id]
 
     @type t :: %__MODULE__{
             path: String.t(),
             content: String.t(),
             etag: String.t() | nil,
-            revision: non_neg_integer()
+            revision: non_neg_integer(),
+            write_id: String.t() | nil
           }
   end
 
@@ -89,7 +90,7 @@ defmodule Unfinal.ContentStore do
   end
 
   @spec missing(path()) :: Document.t()
-  def missing(path), do: %Document{path: path, content: "", etag: nil, revision: 0}
+  def missing(path), do: %Document{path: path, content: "", etag: nil, revision: 0, write_id: nil}
 
   @spec normalize_path(path()) :: path()
   defp normalize_path(""), do: "/"
