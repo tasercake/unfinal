@@ -1,14 +1,13 @@
 defmodule UnfinalWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :unfinal
 
-  # The session will be stored in the cookie and signed,
-  # this means its contents can be read but not tampered with.
-  # Set :encryption_salt if you would also like to encrypt it.
   @session_options [
     store: :cookie,
     key: "_unfinal_key",
     signing_salt: "KOV7UCMl",
-    same_site: "Lax"
+    encryption_salt: "rc7qMC6o",
+    same_site: "Lax",
+    secure: Application.compile_env(:unfinal, :secure_session_cookie, false)
   ]
 
   socket "/live", Phoenix.LiveView.Socket,

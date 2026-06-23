@@ -7,6 +7,8 @@ import Config
 # before starting your production server.
 config :unfinal, UnfinalWeb.Endpoint, cache_static_manifest: "priv/static/cache_manifest.json"
 
+config :unfinal, :secure_session_cookie, true
+
 # Do not print debug messages in production
 config :logger, level: :info
 
