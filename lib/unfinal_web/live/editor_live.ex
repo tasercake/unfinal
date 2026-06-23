@@ -29,6 +29,7 @@ defmodule UnfinalWeb.EditorLive do
         path: path,
         storage_path: storage_path,
         content: document.content,
+        saved_content: document.content,
         etag: document.etag,
         revision: document.revision,
         authenticated: Map.get(session, "authenticated", false),
@@ -51,15 +52,25 @@ defmodule UnfinalWeb.EditorLive do
           assigns: %{
             writer?: true,
             storage_path: storage_path,
+            saved_content: saved_content,
             etag: base_etag,
             revision: base_revision
           }
         } = socket
       ) do
+    if content == saved_content do
+      {:noreply, socket}
+    else
+      save_content(socket, storage_path, content, base_etag, base_revision)
+    end
+  end
+
+  defp save_content(socket, storage_path, content, base_etag, base_revision) do
     case ContentStore.put(storage_path, content, base_etag, base_revision) do
       {:ok, document} ->
         {:noreply,
          assign(socket,
+           saved_content: document.content,
            etag: document.etag,
            revision: document.revision
          )}
@@ -68,6 +79,7 @@ defmodule UnfinalWeb.EditorLive do
         {:noreply,
          assign(socket,
            content: document.content,
+           saved_content: document.content,
            etag: document.etag,
            revision: document.revision
          )}
@@ -189,6 +201,7 @@ defmodule UnfinalWeb.EditorLive do
           >
             <textarea
               name="content"
+              phx-throttle="500"
               class="h-full min-h-0 flex-1 resize-none overflow-y-auto border border-stone-200 bg-white p-5 text-left text-lg leading-8 shadow-sm outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
             ><%= @content %></textarea>
           </.form>

@@ -85,6 +85,7 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     refute root_html =~ "<textarea"
     assert namespace_html =~ "<textarea"
+    assert namespace_html =~ ~s(phx-throttle="500")
     assert child_html =~ "<textarea"
     refute other_html =~ "<textarea"
 
@@ -148,6 +149,7 @@ defmodule UnfinalWeb.EditorLiveTest do
         writer?: true,
         storage_path: "/notes",
         content: "local draft",
+        saved_content: "",
         etag: nil,
         revision: 0
       }
@@ -157,8 +159,53 @@ defmodule UnfinalWeb.EditorLiveTest do
              UnfinalWeb.EditorLive.handle_event("save", %{"content" => "saved remotely"}, socket)
 
     assert updated_socket.assigns.content == "local draft"
+    assert updated_socket.assigns.saved_content == "saved remotely"
     assert updated_socket.assigns.revision == 1
     assert is_binary(updated_socket.assigns.etag)
+  end
+
+  test "writer save skips no-op content using last saved content, not rendered content" do
+    socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        writer?: true,
+        storage_path: "/notes",
+        content: "local draft",
+        saved_content: "saved remotely",
+        etag: "etag-1",
+        revision: 1
+      }
+    }
+
+    assert {:noreply, unchanged_socket} =
+             UnfinalWeb.EditorLive.handle_event("save", %{"content" => "saved remotely"}, socket)
+
+    assert unchanged_socket == socket
+  end
+
+  test "writer can save content matching stale rendered content after another successful save" do
+    socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        writer?: true,
+        storage_path: "/notes",
+        content: "initial",
+        saved_content: "initial",
+        etag: nil,
+        revision: 0
+      }
+    }
+
+    assert {:noreply, saved_socket} =
+             UnfinalWeb.EditorLive.handle_event("save", %{"content" => "changed"}, socket)
+
+    assert {:noreply, reverted_socket} =
+             UnfinalWeb.EditorLive.handle_event("save", %{"content" => "initial"}, saved_socket)
+
+    assert reverted_socket.assigns.content == "initial"
+    assert reverted_socket.assigns.saved_content == "initial"
+    assert reverted_socket.assigns.revision == 2
+    assert ContentStore.get("/notes").content == "initial"
   end
 
   test "readonly content update uses PubSub payload without reading object store" do
@@ -167,6 +214,7 @@ defmodule UnfinalWeb.EditorLiveTest do
         __changed__: %{},
         storage_path: "/notes",
         content: "old",
+        saved_content: "old",
         etag: "old",
         revision: 1
       }
