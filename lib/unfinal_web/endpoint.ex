@@ -5,14 +5,27 @@ defmodule UnfinalWeb.Endpoint do
     store: :cookie,
     key: "_unfinal_key",
     signing_salt: "KOV7UCMl",
-    encryption_salt: "rc7qMC6o",
-    same_site: "Lax",
-    secure: Application.compile_env(:unfinal, :secure_session_cookie, false)
+    same_site: "Lax"
   ]
 
+  @doc """
+  Returns session options resolved at runtime so encryption_salt and
+  secure can vary per environment.
+  """
+  def session_options do
+    encryption_salt = Application.get_env(:unfinal, :encryption_salt)
+    secure = Application.get_env(:unfinal, :secure_session_cookie, false)
+
+    @session_options
+    |> then(fn opts ->
+      if encryption_salt, do: Keyword.put(opts, :encryption_salt, encryption_salt), else: opts
+    end)
+    |> Keyword.put(:secure, secure)
+  end
+
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
+    websocket: [connect_info: [session: {UnfinalWeb.Endpoint, :session_options, []}]],
+    longpoll: [connect_info: [session: {UnfinalWeb.Endpoint, :session_options, []}]]
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -42,6 +55,6 @@ defmodule UnfinalWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug Plug.Session, @session_options
+  plug UnfinalWeb.Plug.SessionLoader
   plug UnfinalWeb.Router
 end
