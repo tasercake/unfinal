@@ -1,6 +1,7 @@
 defmodule UnfinalWeb.EditorLiveTest do
   use UnfinalWeb.ConnCase
 
+  alias Phoenix.LiveView.Socket
   alias Unfinal.ContentStore
   alias Unfinal.NamespaceStore
 
@@ -138,6 +139,50 @@ defmodule UnfinalWeb.EditorLiveTest do
            |> Enum.all?(fn path ->
              Regex.match?(~r/^(#{dictionary_pattern})(#{dictionary_pattern})$/, path)
            end)
+  end
+
+  test "writer save success updates etag and revision without assigning saved content" do
+    socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        writer?: true,
+        storage_path: "/notes",
+        content: "local draft",
+        etag: nil,
+        revision: 0
+      }
+    }
+
+    assert {:noreply, updated_socket} =
+             UnfinalWeb.EditorLive.handle_event("save", %{"content" => "saved remotely"}, socket)
+
+    assert updated_socket.assigns.content == "local draft"
+    assert updated_socket.assigns.revision == 1
+    assert is_binary(updated_socket.assigns.etag)
+  end
+
+  test "readonly content update uses PubSub payload without reading object store" do
+    socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        storage_path: "/notes",
+        content: "old",
+        etag: "old",
+        revision: 1
+      }
+    }
+
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FailingObjectStore)
+
+    assert {:noreply, updated_socket} =
+             UnfinalWeb.EditorLive.handle_info(
+               {:content_updated, "/notes", %{content: "new", etag: "new-etag", revision: 2}},
+               socket
+             )
+
+    assert updated_socket.assigns.content == "new"
+    assert updated_socket.assigns.etag == "new-etag"
+    assert updated_socket.assigns.revision == 2
   end
 
   defp save_document(path, content) do

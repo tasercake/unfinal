@@ -16,11 +16,11 @@ defmodule UnfinalWeb.EditorLive do
     path = url_path(params)
     storage_path = storage_path(params)
 
-    if connected?(socket),
-      do: Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic(storage_path))
-
     claimed_namespace = claimed_namespace(session)
     writer? = writer?(path, session, claimed_namespace)
+
+    if connected?(socket) and not writer?,
+      do: Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic(storage_path))
 
     document = ContentStore.get(storage_path)
 
@@ -60,7 +60,6 @@ defmodule UnfinalWeb.EditorLive do
       {:ok, document} ->
         {:noreply,
          assign(socket,
-           content: document.content,
            etag: document.etag,
            revision: document.revision
          )}
@@ -90,16 +89,14 @@ defmodule UnfinalWeb.EditorLive do
   end
 
   def handle_info(
-        {:content_updated, storage_path, %{etag: _etag, revision: _revision}},
+        {:content_updated, storage_path, %{content: content, etag: etag, revision: revision}},
         %{assigns: %{storage_path: storage_path}} = socket
       ) do
-    document = ContentStore.get(storage_path)
-
     {:noreply,
      assign(socket,
-       content: document.content,
-       etag: document.etag,
-       revision: document.revision
+       content: content,
+       etag: etag,
+       revision: revision
      )}
   end
 

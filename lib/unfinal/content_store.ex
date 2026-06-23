@@ -56,31 +56,37 @@ defmodule Unfinal.ContentStore do
   def init(cache), do: {:ok, cache}
 
   @impl true
-  def handle_call({:get, path}, _from, cache) do
-    case adapter().get(path) do
-      {:ok, doc} -> {:reply, doc, Map.put(cache, path, doc)}
-      {:error, _reason} -> {:reply, Map.get(cache, path, missing(path)), cache}
-    end
+  def handle_call({:get, path}, _from, state) do
+    reply =
+      case adapter().get(path) do
+        {:ok, doc} -> doc
+        {:error, _reason} -> missing(path)
+      end
+
+    {:reply, reply, state}
   end
 
   @impl true
-  def handle_call({:put, path, content, base_etag, base_revision}, _from, cache) do
-    case adapter().put(path, content, base_etag, base_revision) do
-      {:ok, doc} ->
-        Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(path), {
-          :content_updated,
-          path,
-          %{etag: doc.etag, revision: doc.revision}
-        })
+  def handle_call({:put, path, content, base_etag, base_revision}, _from, state) do
+    reply =
+      case adapter().put(path, content, base_etag, base_revision) do
+        {:ok, doc} ->
+          Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(path), {
+            :content_updated,
+            path,
+            %{content: doc.content, etag: doc.etag, revision: doc.revision}
+          })
 
-        {:reply, {:ok, doc}, Map.put(cache, path, doc)}
+          {:ok, doc}
 
-      {:stale, doc} ->
-        {:reply, {:stale, doc}, Map.put(cache, path, doc)}
+        {:stale, doc} ->
+          {:stale, doc}
 
-      {:error, reason} ->
-        {:reply, {:error, reason}, cache}
-    end
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    {:reply, reply, state}
   end
 
   @impl true

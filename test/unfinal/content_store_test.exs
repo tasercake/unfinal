@@ -40,13 +40,13 @@ defmodule Unfinal.ContentStoreTest do
     assert ContentStore.get("/notes").content == "second"
   end
 
-  test "broadcasts accepted changes with revision and etag only on path topic" do
+  test "broadcasts accepted changes with content, revision, and etag on path topic" do
     Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic("/notes"))
 
     base = ContentStore.get("/notes")
     assert {:ok, doc} = ContentStore.put("/notes", "live", base.etag, base.revision)
 
-    assert_receive {:content_updated, "/notes", %{revision: 1, etag: etag}}
+    assert_receive {:content_updated, "/notes", %{content: "live", revision: 1, etag: etag}}
     assert etag == doc.etag
     refute_receive {:content_updated, "/other", _}
   end
@@ -65,13 +65,14 @@ defmodule Unfinal.ContentStoreTest do
     assert Process.alive?(Process.whereis(ContentStore))
   end
 
-  test "read failures return cached documents when available" do
-    assert %{etag: nil, revision: 0} = base = ContentStore.get("/cached")
-    assert {:ok, cached} = ContentStore.put("/cached", "safe", base.etag, base.revision)
+  test "ContentStore does not keep a fake document cache in GenServer state" do
+    assert :sys.get_state(ContentStore) == %{}
 
-    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FailingObjectStore)
+    assert %{etag: nil, revision: 0} = base = ContentStore.get("/uncached")
+    assert :sys.get_state(ContentStore) == %{}
 
-    assert ContentStore.get("/cached") == cached
+    assert {:ok, _doc} = ContentStore.put("/uncached", "safe", base.etag, base.revision)
+    assert :sys.get_state(ContentStore) == %{}
   end
 
   test "ContentStore keeps serving puts and gets after failed reads" do
