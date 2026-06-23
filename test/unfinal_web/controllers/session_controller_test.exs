@@ -3,6 +3,8 @@ defmodule UnfinalWeb.SessionControllerTest do
 
   alias Unfinal.NamespaceStore
 
+  @oauth_sessions_key :clerk_oauth_sessions
+
   setup do
     original_client = Application.get_env(:unfinal, :clerk_oauth_client)
 
@@ -39,20 +41,31 @@ defmodule UnfinalWeb.SessionControllerTest do
 
     for unsafe <- ["//evil.example", "https://evil.example/path"] do
       conn = get(conn, ~p"/login?return_to=#{unsafe}")
+      sessions = get_session(conn, @oauth_sessions_key)
+      {_state, entry} = only_session(sessions)
 
-      assert redirected_to(conn) == "https://clerk.example/oauth/authorize?state=fake"
-      assert get_session(conn, :clerk_return_to) == ~p"/"
+      assert redirected_to(conn) =~ "https://clerk.example/oauth/authorize?state=fake-"
+      assert entry.return_to == ~p"/"
     end
   end
 
-  test "GET /login redirects to Clerk and stores OAuth session", %{conn: conn} do
+  test "GET /login redirects to Clerk and stores OAuth session by state with return_to", %{
+    conn: conn
+  } do
     put_clerk_config()
 
     conn = get(conn, ~p"/login?return_to=/n/notes")
 
-    assert redirected_to(conn) == "https://clerk.example/oauth/authorize?state=fake"
-    assert get_session(conn, :clerk_oauth_session_params) == %{state: "fake", nonce: "fake"}
-    assert get_session(conn, :clerk_return_to) == "/n/notes"
+    assert redirected_to(conn) =~ "https://clerk.example/oauth/authorize?state=fake-"
+
+    sessions = get_session(conn, @oauth_sessions_key)
+    {state, entry} = only_session(sessions)
+
+    assert entry.session_params == %{state: state, nonce: "fake"}
+    assert entry.return_to == "/n/notes"
+    assert is_integer(entry.inserted_at)
+    refute get_session(conn, :clerk_oauth_session_params)
+    refute get_session(conn, :clerk_return_to)
 
     assert_received {:authorize_url, config}
     assert Keyword.fetch!(config, :base_url) == "https://clerk.example"
@@ -64,6 +77,41 @@ defmodule UnfinalWeb.SessionControllerTest do
     assert Keyword.fetch!(config, :client_secret) == "secret_123"
     assert Keyword.fetch!(config, :redirect_uri) == "http://localhost:4002/auth/clerk/callback"
     assert Keyword.fetch!(config, :code_verifier) == true
+  end
+
+  test "two login starts preserve both states and older callback still authenticates", %{
+    conn: conn
+  } do
+    put_clerk_config()
+
+    first_conn = get(conn, ~p"/login?return_to=/n/first")
+    {first_state, _first_entry} = only_session(get_session(first_conn, @oauth_sessions_key))
+
+    second_conn = get(first_conn, ~p"/login?return_to=/n/second")
+    sessions = get_session(second_conn, @oauth_sessions_key)
+    assert map_size(sessions) == 2
+    assert Map.has_key?(sessions, first_state)
+    second_state = sessions |> Map.keys() |> Enum.find(&(&1 != first_state))
+
+    callback_conn = get(second_conn, ~p"/auth/clerk/callback?code=ok&state=#{first_state}")
+
+    assert redirected_to(callback_conn) == "/n/first"
+    assert get_session(callback_conn, :authenticated) == true
+    assert get_session(callback_conn, @oauth_sessions_key) |> Map.has_key?(second_state)
+  end
+
+  test "callback removes only used state and leaves remaining state", %{conn: conn} do
+    put_clerk_config()
+
+    conn = get(conn, ~p"/login?return_to=/n/first")
+    {first_state, _entry} = only_session(get_session(conn, @oauth_sessions_key))
+    conn = get(conn, ~p"/login?return_to=/n/second")
+
+    conn = get(conn, ~p"/auth/clerk/callback?code=ok&state=#{first_state}")
+
+    sessions = get_session(conn, @oauth_sessions_key)
+    refute Map.has_key?(sessions, first_state)
+    assert map_size(sessions) == 1
   end
 
   test "GET /login fails clearly when Clerk env missing", %{conn: conn} do
@@ -83,8 +131,13 @@ defmodule UnfinalWeb.SessionControllerTest do
     conn =
       conn
       |> Plug.Test.init_test_session(
-        clerk_oauth_session_params: %{state: "fake", nonce: "fake"},
-        clerk_return_to: nil
+        clerk_oauth_sessions: %{
+          "fake" => %{
+            session_params: %{state: "fake", nonce: "fake"},
+            return_to: nil,
+            inserted_at: now()
+          }
+        }
       )
       |> get(~p"/auth/clerk/callback?code=ok&state=fake")
 
@@ -97,8 +150,7 @@ defmodule UnfinalWeb.SessionControllerTest do
              "provider" => "clerk"
            }
 
-    refute get_session(conn, :clerk_oauth_session_params)
-    refute get_session(conn, :clerk_return_to)
+    refute get_session(conn, @oauth_sessions_key)
 
     assert_received {:callback, config, %{"code" => "ok", "state" => "fake"}}
     assert Keyword.fetch!(config, :session_params) == %{state: "fake", nonce: "fake"}
@@ -110,8 +162,12 @@ defmodule UnfinalWeb.SessionControllerTest do
 
     conn =
       conn
-      |> Plug.Test.init_test_session(clerk_oauth_session_params: %{state: "fake"})
-      |> get(~p"/auth/clerk/callback?code=ok")
+      |> Plug.Test.init_test_session(
+        clerk_oauth_sessions: %{
+          "fake" => %{session_params: %{state: "fake"}, return_to: nil, inserted_at: now()}
+        }
+      )
+      |> get(~p"/auth/clerk/callback?code=ok&state=fake")
 
     assert redirected_to(conn) == "/n/alpha"
     assert get_session(conn, :authenticated) == true
@@ -124,21 +180,108 @@ defmodule UnfinalWeb.SessionControllerTest do
 
     conn =
       conn
-      |> Plug.Test.init_test_session(clerk_oauth_session_params: %{state: "fake"})
-      |> get(~p"/auth/clerk/callback?code=unverified")
+      |> Plug.Test.init_test_session(
+        clerk_oauth_sessions: %{
+          "fake" => %{session_params: %{state: "fake"}, return_to: nil, inserted_at: now()}
+        }
+      )
+      |> get(~p"/auth/clerk/callback?code=unverified&state=fake")
 
     assert redirected_to(conn) == ~p"/claim"
     assert get_session(conn, :authenticated) == true
     assert get_session(conn, :user)["email"] == "user@example.com"
   end
 
-  test "GET /auth/clerk/callback rejects missing OAuth session", %{conn: conn} do
+  test "GET /auth/clerk/callback rejects missing or unknown state with friendly page", %{
+    conn: conn
+  } do
     put_clerk_config()
 
-    conn = get(conn, ~p"/auth/clerk/callback?code=ok")
+    for path <- [~p"/auth/clerk/callback?code=ok", ~p"/auth/clerk/callback?code=ok&state=unknown"] do
+      conn = get(conn, path)
+      body = html_response(conn, 401)
 
-    assert text_response(conn, 401) =~ "missing login session"
-    refute get_session(conn, :authenticated)
+      assert body =~ "Sign-in link expired"
+      assert body =~ "This sign-in attempt is no longer valid"
+      assert body =~ "Sign in again"
+      refute body =~ "%Assent"
+      refute body =~ "CallbackCSRFError"
+      refute body =~ "%{"
+      refute get_session(conn, :authenticated)
+    end
+  end
+
+  test "Assent callback CSRF error returns friendly page without raw leak", %{conn: conn} do
+    put_clerk_config()
+
+    conn =
+      conn
+      |> Plug.Test.init_test_session(
+        clerk_oauth_sessions: %{
+          "fake" => %{session_params: %{state: "fake"}, return_to: nil, inserted_at: now()}
+        }
+      )
+      |> get(~p"/auth/clerk/callback?code=csrf_error&state=fake")
+
+    body = html_response(conn, 401)
+    assert body =~ "Sign-in link expired"
+    refute body =~ "%Assent"
+    refute body =~ "CallbackCSRFError"
+  end
+
+  test "more than five entries prunes oldest on login", %{conn: conn} do
+    put_clerk_config()
+    base_time = now()
+
+    old_sessions =
+      Map.new(1..5, fn i ->
+        {"old-#{i}",
+         %{
+           session_params: %{state: "old-#{i}"},
+           return_to: "/",
+           inserted_at: base_time - (6 - i)
+         }}
+      end)
+
+    conn =
+      conn
+      |> Plug.Test.init_test_session(clerk_oauth_sessions: old_sessions)
+      |> get(~p"/login")
+
+    sessions = get_session(conn, @oauth_sessions_key)
+
+    assert map_size(sessions) == 5
+    refute Map.has_key?(sessions, "old-1")
+    assert Map.has_key?(sessions, "old-2")
+    assert Map.has_key?(sessions, "fake-1")
+  end
+
+  test "entries older than 24 hours are expired and rejected", %{conn: conn} do
+    put_clerk_config()
+
+    conn =
+      conn
+      |> Plug.Test.init_test_session(
+        clerk_oauth_sessions: %{
+          "old" => %{
+            session_params: %{state: "old"},
+            return_to: "/n/old",
+            inserted_at: now() - 24 * 60 * 60 - 1
+          },
+          "fresh" => %{
+            session_params: %{state: "fresh"},
+            return_to: "/n/fresh",
+            inserted_at: now()
+          }
+        }
+      )
+      |> get(~p"/auth/clerk/callback?code=ok&state=old")
+
+    body = html_response(conn, 401)
+    assert body =~ "Sign-in link expired"
+    sessions = get_session(conn, @oauth_sessions_key)
+    refute Map.has_key?(sessions, "old")
+    assert Map.has_key?(sessions, "fresh")
   end
 
   test "GET /logout clears local session and redirects safely", %{conn: conn} do
@@ -168,6 +311,14 @@ defmodule UnfinalWeb.SessionControllerTest do
     refute get_session(conn, :authenticated)
     refute get_session(conn, :user)
   end
+
+  defp only_session(sessions) do
+    assert is_map(sessions)
+    assert map_size(sessions) == 1
+    hd(Map.to_list(sessions))
+  end
+
+  defp now, do: System.system_time(:second)
 
   defp put_clerk_config do
     Application.put_env(:unfinal, :clerk_oauth_client, UnfinalWeb.FakeClerkOAuth)

@@ -6,10 +6,12 @@ defmodule UnfinalWeb.FakeClerkOAuth do
   def authorize_url(config) do
     send(self(), {:authorize_url, config})
 
+    state = next_state()
+
     {:ok,
      %{
-       url: "https://clerk.example/oauth/authorize?state=fake",
-       session_params: %{state: "fake", nonce: "fake"}
+       url: "https://clerk.example/oauth/authorize?state=#{state}",
+       session_params: %{state: state, nonce: "fake"}
      }}
   end
 
@@ -29,8 +31,17 @@ defmodule UnfinalWeb.FakeClerkOAuth do
       %{"code" => "missing_email"} ->
         {:ok, %{user: %{"sub" => "user_123", "email_verified" => true}}}
 
+      %{"code" => "csrf_error"} ->
+        {:error, %Assent.CallbackCSRFError{key: "state"}}
+
       _params ->
         {:error, :invalid_callback}
     end
+  end
+
+  defp next_state do
+    counter = Process.get(:fake_clerk_oauth_counter, 0) + 1
+    Process.put(:fake_clerk_oauth_counter, counter)
+    "fake-#{counter}"
   end
 end
