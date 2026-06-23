@@ -13,7 +13,8 @@ defmodule Unfinal.Application do
       UnfinalWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:unfinal, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Unfinal.PubSub},
-      Unfinal.ContentStore,
+      {Registry, keys: :unique, name: Unfinal.DocumentRegistry},
+      {DynamicSupervisor, strategy: :one_for_one, name: Unfinal.DocumentSupervisor},
       Unfinal.NamespaceStore,
       # Start to serve requests, typically the last entry
       UnfinalWeb.Endpoint
