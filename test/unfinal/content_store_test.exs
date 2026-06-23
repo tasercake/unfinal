@@ -55,4 +55,33 @@ defmodule Unfinal.ContentStoreTest do
     hash = :crypto.hash(:sha256, "/notes") |> Base.encode16(case: :lower)
     assert ContentStore.object_key("/notes") == "documents/#{hash}.txt"
   end
+
+  test "read failures return missing documents without stopping ContentStore" do
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FailingObjectStore)
+
+    assert %ContentStore.Document{path: "/outage", content: "", etag: nil, revision: 0} =
+             ContentStore.get("/outage")
+
+    assert Process.alive?(Process.whereis(ContentStore))
+  end
+
+  test "read failures return cached documents when available" do
+    assert %{etag: nil, revision: 0} = base = ContentStore.get("/cached")
+    assert {:ok, cached} = ContentStore.put("/cached", "safe", base.etag, base.revision)
+
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FailingObjectStore)
+
+    assert ContentStore.get("/cached") == cached
+  end
+
+  test "ContentStore keeps serving puts and gets after failed reads" do
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FailingObjectStore)
+    assert %ContentStore.Document{} = ContentStore.get("/temporary-outage")
+
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
+
+    assert %{etag: nil, revision: 0} = base = ContentStore.get("/after-outage")
+    assert {:ok, doc} = ContentStore.put("/after-outage", "still alive", base.etag, base.revision)
+    assert ContentStore.get("/after-outage") == doc
+  end
 end
