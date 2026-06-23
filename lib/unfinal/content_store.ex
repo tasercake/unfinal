@@ -46,6 +46,11 @@ defmodule Unfinal.ContentStore do
     GenServer.call(__MODULE__, {:put, normalize_path(path), content, base_etag, base_revision})
   end
 
+  @spec queue_put(path(), content()) :: :ok
+  def queue_put(path, content) when is_binary(content) do
+    GenServer.call(__MODULE__, {:queue_put, normalize_path(path), content})
+  end
+
   @spec clear() :: :ok
   def clear, do: GenServer.call(__MODULE__, :clear)
 
@@ -90,9 +95,63 @@ defmodule Unfinal.ContentStore do
   end
 
   @impl true
-  def handle_call(:clear, _from, _cache) do
+  def handle_call({:queue_put, path, content}, _from, state) do
+    entry = Map.get(state, path) || new_entry(path)
+    entry = %{entry | pending_content: content} |> schedule_flush(path)
+
+    {:reply, :ok, Map.put(state, path, entry)}
+  end
+
+  @impl true
+  def handle_call(:clear, _from, cache) do
+    Enum.each(cache, fn {_path, entry} -> cancel_timer(entry.timer_ref) end)
     adapter().clear()
     {:reply, :ok, %{}}
+  end
+
+  @impl true
+  def handle_info({:flush, path}, state) do
+    case Map.get(state, path) do
+      nil ->
+        {:noreply, state}
+
+      %{pending_content: nil} = entry ->
+        {:noreply, Map.put(state, path, %{entry | timer_ref: nil})}
+
+      entry ->
+        flushed_content = entry.pending_content
+
+        next_entry =
+          case adapter().put(
+                 path,
+                 flushed_content,
+                 entry.persisted.etag,
+                 entry.persisted.revision
+               ) do
+            {:ok, doc} ->
+              Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(path), {
+                :content_updated,
+                path,
+                %{content: doc.content, etag: doc.etag, revision: doc.revision}
+              })
+
+              if entry.pending_content == flushed_content do
+                %{entry | persisted: doc, pending_content: nil, timer_ref: nil}
+              else
+                %{entry | persisted: doc, timer_ref: nil} |> schedule_flush(path)
+              end
+
+            {:stale, doc} ->
+              %{entry | persisted: doc, timer_ref: nil} |> schedule_flush(path)
+
+            {:error, reason} ->
+              require Logger
+              Logger.warning("content flush failed for #{path}: #{inspect(reason)}")
+              %{entry | timer_ref: nil} |> schedule_flush(path)
+          end
+
+        {:noreply, Map.put(state, path, next_entry)}
+    end
   end
 
   @spec missing(path()) :: Document.t()
@@ -101,6 +160,29 @@ defmodule Unfinal.ContentStore do
   @spec normalize_path(path()) :: path()
   defp normalize_path(""), do: "/"
   defp normalize_path(path) when is_binary(path), do: path
+
+  defp new_entry(path) do
+    persisted =
+      case adapter().get(path) do
+        {:ok, doc} -> doc
+        {:error, _reason} -> missing(path)
+      end
+
+    %{persisted: persisted, pending_content: nil, timer_ref: nil}
+  end
+
+  defp schedule_flush(%{timer_ref: nil} = entry, path) do
+    %{entry | timer_ref: Process.send_after(self(), {:flush, path}, flush_interval_ms())}
+  end
+
+  defp schedule_flush(entry, _path), do: entry
+
+  defp cancel_timer(nil), do: :ok
+  defp cancel_timer(timer_ref), do: Process.cancel_timer(timer_ref)
+
+  defp flush_interval_ms do
+    Application.get_env(:unfinal, :content_store_flush_interval_ms, 500)
+  end
 
   defp adapter do
     Application.get_env(:unfinal, :object_store_adapter, Unfinal.S3ObjectStore)

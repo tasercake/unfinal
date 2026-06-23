@@ -65,14 +65,44 @@ defmodule Unfinal.ContentStoreTest do
     assert Process.alive?(Process.whereis(ContentStore))
   end
 
-  test "ContentStore does not keep a fake document cache in GenServer state" do
-    assert :sys.get_state(ContentStore) == %{}
+  test "queued puts coalesce, persist latest content, and broadcast only after durable flush" do
+    Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic("/queued"))
 
-    assert %{etag: nil, revision: 0} = base = ContentStore.get("/uncached")
-    assert :sys.get_state(ContentStore) == %{}
+    assert :ok = ContentStore.queue_put("/queued", "one")
+    assert :ok = ContentStore.queue_put("/queued", "two")
+    refute_receive {:content_updated, "/queued", _}, 5
 
-    assert {:ok, _doc} = ContentStore.put("/uncached", "safe", base.etag, base.revision)
-    assert :sys.get_state(ContentStore) == %{}
+    assert_receive {:content_updated, "/queued", %{content: "two", revision: 1, etag: etag}}, 200
+    assert is_binary(etag)
+    assert ContentStore.get("/queued").content == "two"
+    refute_receive {:content_updated, "/queued", _}, 30
+  end
+
+  test "queued put flush retry keeps final pending content after durable write failure" do
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FlakyObjectStore)
+    Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
+    Unfinal.FlakyObjectStore.clear()
+    Unfinal.FlakyObjectStore.fail_next_put()
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic("/flaky"))
+
+    assert :ok = ContentStore.queue_put("/flaky", "eventual")
+    refute_receive {:content_updated, "/flaky", _}, 15
+
+    assert_receive {:content_updated, "/flaky", %{content: "eventual"}}, 250
+    assert ContentStore.get("/flaky").content == "eventual"
+  end
+
+  test "queued stale flush updates base and retries pending content" do
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.StaleOnceObjectStore)
+    Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
+    Unfinal.StaleOnceObjectStore.clear()
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic("/stale"))
+
+    assert :ok = ContentStore.queue_put("/stale", "pending")
+
+    assert_receive {:content_updated, "/stale", %{content: "pending", revision: 2}}, 250
+    assert ContentStore.get("/stale").content == "pending"
   end
 
   test "ContentStore keeps serving puts and gets after failed reads" do

@@ -7,12 +7,14 @@ defmodule UnfinalWeb.EditorLiveTest do
 
   setup do
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
+    Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
     ContentStore.clear()
     NamespaceStore.clear()
 
     on_exit(fn ->
       ContentStore.clear()
       NamespaceStore.clear()
+      Application.delete_env(:unfinal, :content_store_flush_interval_ms)
     end)
 
     :ok
@@ -69,7 +71,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     root |> form("form[phx-change=save]", %{content: "root body"}) |> render_change()
     render_hook(child, "save", %{"content" => "blocked"})
 
-    assert ContentStore.get("/").content == "root body"
+    assert_eventually(fn -> ContentStore.get("/").content == "root body" end)
     assert ContentStore.get("/n").content == ""
     assert ContentStore.get("/alpha").content == ""
   end
@@ -85,7 +87,8 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     refute root_html =~ "<textarea"
     assert namespace_html =~ "<textarea"
-    assert namespace_html =~ ~s(phx-throttle="500")
+    refute namespace_html =~ "phx-throttle"
+    refute namespace_html =~ "phx-debounce"
     assert child_html =~ "<textarea"
     refute other_html =~ "<textarea"
 
@@ -94,8 +97,8 @@ defmodule UnfinalWeb.EditorLiveTest do
     render_hook(root, "save", %{"content" => "blocked"})
     render_hook(other, "save", %{"content" => "blocked"})
 
-    assert ContentStore.get("/alpha").content == "home"
-    assert ContentStore.get("/alpha/page").content == "child"
+    assert_eventually(fn -> ContentStore.get("/alpha").content == "home" end)
+    assert_eventually(fn -> ContentStore.get("/alpha/page").content == "child" end)
     assert ContentStore.get("/").content == ""
     assert ContentStore.get("/beta").content == ""
     assert ContentStore.get("/n/alpha").content == ""
@@ -142,7 +145,7 @@ defmodule UnfinalWeb.EditorLiveTest do
            end)
   end
 
-  test "writer save success updates etag and revision without assigning saved content" do
+  test "writer save queues without echoing content or durable metadata" do
     socket = %Socket{
       assigns: %{
         __changed__: %{},
@@ -159,12 +162,12 @@ defmodule UnfinalWeb.EditorLiveTest do
              UnfinalWeb.EditorLive.handle_event("save", %{"content" => "saved remotely"}, socket)
 
     assert updated_socket.assigns.content == "local draft"
-    assert updated_socket.assigns.saved_content == "saved remotely"
-    assert updated_socket.assigns.revision == 1
-    assert is_binary(updated_socket.assigns.etag)
+    assert updated_socket.assigns.saved_content == ""
+    assert updated_socket.assigns.revision == 0
+    assert updated_socket.assigns.etag == nil
   end
 
-  test "writer save skips no-op content using last saved content, not rendered content" do
+  test "writer save queues content matching previous saved content" do
     socket = %Socket{
       assigns: %{
         __changed__: %{},
@@ -181,9 +184,10 @@ defmodule UnfinalWeb.EditorLiveTest do
              UnfinalWeb.EditorLive.handle_event("save", %{"content" => "saved remotely"}, socket)
 
     assert unchanged_socket == socket
+    assert_eventually(fn -> ContentStore.get("/notes").content == "saved remotely" end)
   end
 
-  test "writer can save content matching stale rendered content after another successful save" do
+  test "writer can queue content matching stale rendered content after another queued save" do
     socket = %Socket{
       assigns: %{
         __changed__: %{},
@@ -204,8 +208,8 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     assert reverted_socket.assigns.content == "initial"
     assert reverted_socket.assigns.saved_content == "initial"
-    assert reverted_socket.assigns.revision == 2
-    assert ContentStore.get("/notes").content == "initial"
+    assert reverted_socket.assigns.revision == 0
+    assert_eventually(fn -> ContentStore.get("/notes").content == "initial" end)
   end
 
   test "readonly content update uses PubSub payload without reading object store" do
@@ -232,6 +236,19 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert updated_socket.assigns.etag == "new-etag"
     assert updated_socket.assigns.revision == 2
   end
+
+  defp assert_eventually(fun, attempts \\ 20)
+
+  defp assert_eventually(fun, attempts) when attempts > 0 do
+    if fun.() do
+      assert true
+    else
+      Process.sleep(10)
+      assert_eventually(fun, attempts - 1)
+    end
+  end
+
+  defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 
   defp save_document(path, content) do
     base = ContentStore.get(path)
