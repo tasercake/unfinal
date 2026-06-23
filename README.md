@@ -53,7 +53,7 @@ CLERK_OAUTH_REDIRECT_URI=https://your-domain.example/auth/clerk/callback
 CLERK_OAUTH_SCOPES="email profile"
 ```
 
-In Clerk Dashboard → OAuth applications, create app with redirect URI matching `CLERK_OAUTH_REDIRECT_URI`. Scopes should include `openid email profile`; app adds `openid` automatically.
+In Clerk Dashboard → OAuth applications, create app with redirect URI matching `CLERK_OAUTH_REDIRECT_URI`. Scopes should include `openid email profile`; app adds `openid` automatically. Enable OAuth/OIDC end-session and allow the post-logout redirect URI for your app root, e.g. `https://your-domain.example/`.
 
 ## Local writers
 

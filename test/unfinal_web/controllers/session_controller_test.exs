@@ -97,6 +97,7 @@ defmodule UnfinalWeb.SessionControllerTest do
              "provider" => "clerk"
            }
 
+    assert get_session(conn, :clerk_id_token) == "fake-id-token"
     refute get_session(conn, :clerk_oauth_session_params)
     refute get_session(conn, :clerk_return_to)
 
@@ -141,30 +142,47 @@ defmodule UnfinalWeb.SessionControllerTest do
     refute get_session(conn, :authenticated)
   end
 
-  test "GET /logout clears local session and redirects safely", %{conn: conn} do
+  test "GET /logout clears local session and redirects to Clerk end-session", %{conn: conn} do
+    put_clerk_config()
+
     conn =
       conn
       |> Plug.Test.init_test_session(
         authenticated: true,
-        user: %{"id" => "usr1234", "email" => "user@example.com"}
+        user: %{"id" => "usr1234", "email" => "user@example.com"},
+        clerk_id_token: "fake-id-token"
       )
       |> get(~p"/logout?return_to=/notes")
 
-    assert redirected_to(conn) == "/notes"
+    assert redirected_to(conn) =~ "https://clerk.example/oauth/end_session?"
+    redirect_uri = URI.parse(redirected_to(conn))
+    params = URI.decode_query(redirect_uri.query)
+
+    assert redirect_uri.scheme == "https"
+    assert redirect_uri.host == "clerk.example"
+    assert redirect_uri.path == "/oauth/end_session"
+    assert params["id_token_hint"] == "fake-id-token"
+    assert params["post_logout_redirect_uri"] == url(~p"/")
     refute get_session(conn, :authenticated)
     refute get_session(conn, :user)
+    refute get_session(conn, :clerk_id_token)
   end
 
-  test "POST /logout remains supported and sanitizes unsafe return_to", %{conn: conn} do
+  test "POST /logout with missing old-session id_token clears local session and redirects home",
+       %{
+         conn: conn
+       } do
+    put_clerk_config()
+
     conn =
       conn
       |> Plug.Test.init_test_session(
         authenticated: true,
         user: %{"id" => "usr1234", "email" => "user@example.com"}
       )
-      |> post(~p"/logout?return_to=https://evil.example/path")
+      |> post(~p"/logout?return_to=/notes")
 
-    assert redirected_to(conn) == "/"
+    assert redirected_to(conn) == ~p"/"
     refute get_session(conn, :authenticated)
     refute get_session(conn, :user)
   end
