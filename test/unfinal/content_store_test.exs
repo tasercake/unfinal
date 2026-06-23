@@ -56,13 +56,44 @@ defmodule Unfinal.ContentStoreTest do
     assert ContentStore.object_key("/notes") == "documents/#{hash}.txt"
   end
 
-  test "read failures return missing documents without stopping ContentStore" do
+  test "get starts one document server for a path and reuses it" do
+    assert Registry.lookup(Unfinal.DocumentRegistry, "/notes") == []
+
+    assert %ContentStore.Document{} = ContentStore.get("/notes")
+    assert [{pid, _value}] = Registry.lookup(Unfinal.DocumentRegistry, "/notes")
+
+    assert %ContentStore.Document{} = ContentStore.get("/notes")
+    assert Registry.lookup(Unfinal.DocumentRegistry, "/notes") == [{pid, nil}]
+  end
+
+  test "different paths use different document server pids" do
+    ContentStore.get("/one")
+    ContentStore.get("/two")
+
+    assert [{one, _}] = Registry.lookup(Unfinal.DocumentRegistry, "/one")
+    assert [{two, _}] = Registry.lookup(Unfinal.DocumentRegistry, "/two")
+    assert one != two
+  end
+
+  test "clear stops document servers and clears adapter state" do
+    base = ContentStore.get("/notes")
+    assert {:ok, _doc} = ContentStore.put("/notes", "saved", base.etag, base.revision)
+    assert [{pid, _}] = Registry.lookup(Unfinal.DocumentRegistry, "/notes")
+
+    assert :ok = ContentStore.clear()
+    refute Process.alive?(pid)
+    assert Registry.lookup(Unfinal.DocumentRegistry, "/notes") == []
+    assert ContentStore.get("/notes").content == ""
+  end
+
+  test "read failures return missing documents without stopping document server" do
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FailingObjectStore)
 
     assert %ContentStore.Document{path: "/outage", content: "", etag: nil, revision: 0} =
              ContentStore.get("/outage")
 
-    assert Process.alive?(Process.whereis(ContentStore))
+    assert [{pid, _}] = Registry.lookup(Unfinal.DocumentRegistry, "/outage")
+    assert Process.alive?(pid)
   end
 
   test "queued puts coalesce, persist latest content, and broadcast only after durable flush" do
@@ -114,5 +145,37 @@ defmodule Unfinal.ContentStoreTest do
     assert %{etag: nil, revision: 0} = base = ContentStore.get("/after-outage")
     assert {:ok, doc} = ContentStore.put("/after-outage", "still alive", base.etag, base.revision)
     assert ContentStore.get("/after-outage") == doc
+  end
+
+  defp assert_eventually(fun, attempts \\ 20)
+
+  defp assert_eventually(fun, attempts) when attempts > 0 do
+    if fun.() do
+      assert true
+    else
+      Process.sleep(10)
+      assert_eventually(fun, attempts - 1)
+    end
+  end
+
+  defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
+
+  test "slow flush for one document does not block a different document server" do
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.BlockingObjectStore)
+    Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
+    Unfinal.BlockingObjectStore.ensure_started()
+    Unfinal.BlockingObjectStore.set_parent(self())
+    ContentStore.clear()
+
+    assert :ok = ContentStore.queue_put("/slow", "slow")
+    assert_receive :slow_put_started, 300
+    assert [{slow_pid, _}] = Registry.lookup(Unfinal.DocumentRegistry, "/slow")
+
+    assert %{etag: nil, revision: 0} = base = ContentStore.get("/fast")
+    assert {:ok, fast} = ContentStore.put("/fast", "fast", base.etag, base.revision)
+    assert fast.content == "fast"
+
+    send(slow_pid, :release_slow_put)
+    assert_eventually(fn -> ContentStore.get("/slow").content == "slow" end)
   end
 end
