@@ -38,6 +38,26 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert render(existing) =~ "saved text"
   end
 
+  test "accepts only valid document paths", %{conn: conn} do
+    for path <- ["/n", "/n/alpha", "/n/alpha-1", "/n/nested/page-2"] do
+      assert {:ok, _view, _html} = live(conn, path)
+    end
+
+    for path <- [
+          "/n/Alpha",
+          "/n/alpha_beta",
+          "/n/alpha.beta",
+          "/n/alpha%20beta",
+          "/n/alpha//beta",
+          "/n/-alpha",
+          "/n/alpha-",
+          "/n/.."
+        ] do
+      conn = get(conn, path)
+      assert html_response(conn, 404)
+    end
+  end
+
   test "unauthenticated content view shows readonly page chrome", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/n/notes")
 

@@ -30,10 +30,22 @@ defmodule Unfinal.NamespaceStoreTest do
     %{data_dir: data_dir}
   end
 
-  test "validates strict lowercase alphanumeric namespaces" do
-    assert NamespaceStore.valid_namespace?("abc123")
+  test "validates strict lowercase alphanumeric hyphen namespaces" do
+    for namespace <- ["alpha", "alpha1", "alpha-1"] do
+      assert NamespaceStore.valid_namespace?(namespace)
+    end
 
-    for namespace <- ["", "Abc", "abc-def", "abc_def", "abc def", "abc/def"] do
+    for namespace <- [
+          "",
+          "Alpha",
+          "alpha_beta",
+          "alpha.beta",
+          "alpha beta",
+          "alpha/one",
+          "-alpha",
+          "alpha-",
+          ".."
+        ] do
       refute NamespaceStore.valid_namespace?(namespace)
     end
   end

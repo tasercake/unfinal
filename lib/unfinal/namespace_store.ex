@@ -14,10 +14,7 @@ defmodule Unfinal.NamespaceStore do
   def start_link(_opts), do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
 
   @spec valid_namespace?(term()) :: boolean()
-  def valid_namespace?(namespace) when is_binary(namespace),
-    do: Regex.match?(~r/^[a-z0-9]+$/, namespace)
-
-  def valid_namespace?(_namespace), do: false
+  def valid_namespace?(namespace), do: Unfinal.DocumentPath.valid_segment?(namespace)
 
   @spec claim(namespace(), map()) :: :ok | {:error, :invalid | :taken | :already_claimed}
   def claim(namespace, %{"email" => email}) when is_binary(email) do

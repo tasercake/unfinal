@@ -44,7 +44,7 @@ defmodule UnfinalWeb.ClaimLiveTest do
              "already taken"
 
     assert render_change(view, "validate", %{"claim" => %{"namespace" => "Bad-Name"}}) =~
-             "lowercase letters and numbers only"
+             "lowercase letters, numbers, and hyphens"
   end
 
   test "claims namespace and redirects to its root", %{conn: conn} do

@@ -2,6 +2,7 @@ defmodule UnfinalWeb.EditorLive do
   use UnfinalWeb, :live_view
 
   alias Unfinal.ContentStore
+  alias Unfinal.DocumentPath
   alias Unfinal.NamespaceStore
   alias Unfinal.Writers
 
@@ -13,11 +14,19 @@ defmodule UnfinalWeb.EditorLive do
 
   @impl true
   def mount(params, session, socket) do
-    path = url_path(params)
-    storage_path = storage_path(params)
+    segments = path_segments(params)
+
+    unless DocumentPath.valid_segments?(segments) do
+      raise Phoenix.Router.NoRouteError,
+        conn: socket.private.connect_info,
+        router: UnfinalWeb.Router
+    end
+
+    path = url_path(segments)
+    storage_path = storage_path(segments)
 
     claimed_namespace = claimed_namespace(session)
-    writer? = writer?(path, session, claimed_namespace)
+    writer? = writer?(segments, session, claimed_namespace)
 
     if connected?(socket) and not writer?,
       do: Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic(storage_path))
@@ -82,19 +91,22 @@ defmodule UnfinalWeb.EditorLive do
      )}
   end
 
-  defp url_path(%{"path" => parts}), do: "/n/" <> Enum.join(parts, "/")
-  defp url_path(_params), do: "/n"
+  defp path_segments(%{"path" => parts}), do: parts
+  defp path_segments(_params), do: []
 
-  defp storage_path(%{"path" => parts}), do: "/" <> Enum.join(parts, "/")
-  defp storage_path(_params), do: "/"
+  defp url_path([]), do: "/n"
+  defp url_path(parts), do: "/n/" <> Enum.join(parts, "/")
 
-  defp writer?("/n", session, _claimed_namespace), do: superuser?(session)
+  defp storage_path([]), do: "/"
+  defp storage_path(parts), do: "/" <> Enum.join(parts, "/")
 
-  defp writer?(path, _session, claimed_namespace) when is_binary(claimed_namespace) do
-    path == "/n/#{claimed_namespace}" or String.starts_with?(path, "/n/#{claimed_namespace}/")
-  end
+  defp writer?([], session, _claimed_namespace), do: superuser?(session)
 
-  defp writer?(_path, _session, _claimed_namespace), do: false
+  defp writer?([namespace | _rest], _session, claimed_namespace)
+       when is_binary(claimed_namespace),
+       do: namespace == claimed_namespace
+
+  defp writer?(_segments, _session, _claimed_namespace), do: false
 
   defp superuser?(%{"authenticated" => true, "user" => %{"email" => email}}),
     do: Writers.authorized?(email)

@@ -36,7 +36,7 @@ defmodule UnfinalWeb.ClaimLive do
         {:noreply,
          assign(socket,
            namespace: namespace,
-           error: "Use lowercase letters and numbers only.",
+           error: invalid_namespace_message(),
            message: nil
          )}
 
@@ -64,7 +64,7 @@ defmodule UnfinalWeb.ClaimLive do
       not NamespaceStore.valid_namespace?(namespace) ->
         assign(socket,
           namespace: namespace,
-          error: "Use lowercase letters and numbers only.",
+          error: invalid_namespace_message(),
           message: nil
         )
 
@@ -79,6 +79,9 @@ defmodule UnfinalWeb.ClaimLive do
         assign(socket, namespace: namespace, error: nil, message: "Available.")
     end
   end
+
+  defp invalid_namespace_message,
+    do: "Use lowercase letters, numbers, and hyphens. Do not start or end with a hyphen."
 
   @impl true
   def render(assigns) do
@@ -104,7 +107,7 @@ defmodule UnfinalWeb.ClaimLive do
           id="claim_namespace"
           name="claim[namespace]"
           value={@namespace}
-          pattern="[a-z0-9]+"
+          pattern="[a-z0-9][a-z0-9-]*[a-z0-9]|[a-z0-9]"
           required
           autocomplete="off"
           class="border border-stone-200 bg-white p-3 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
