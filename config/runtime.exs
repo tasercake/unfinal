@@ -40,6 +40,16 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  encryption_salt =
+    System.get_env("ENCRYPTION_SALT") ||
+      raise """
+      environment variable ENCRYPTION_SALT is missing.
+      Generate one with: mix phx.gen.secret
+      Salt also stored in /etc/unfinal/unfinal.env on production.
+      """
+
+  config :unfinal, :encryption_salt, encryption_salt
+
   host = "localhost"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
