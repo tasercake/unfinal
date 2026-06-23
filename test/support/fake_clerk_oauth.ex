@@ -20,11 +20,17 @@ defmodule UnfinalWeb.FakeClerkOAuth do
     case params do
       %{"code" => "ok"} ->
         {:ok,
-         %{user: %{"sub" => "user_123", "email" => "USER@example.COM", "email_verified" => true}}}
+         %{
+           user: %{"sub" => "user_123", "email" => "USER@example.COM", "email_verified" => true},
+           token: %{"id_token" => "fake-id-token"}
+         }}
 
       %{"code" => "unverified"} ->
         {:ok,
-         %{user: %{"sub" => "user_123", "email" => "user@example.com", "email_verified" => false}}}
+         %{
+           user: %{"sub" => "user_123", "email" => "user@example.com", "email_verified" => false},
+           token: %{"id_token" => "fake-id-token"}
+         }}
 
       %{"code" => "missing_email"} ->
         {:ok, %{user: %{"sub" => "user_123", "email_verified" => true}}}

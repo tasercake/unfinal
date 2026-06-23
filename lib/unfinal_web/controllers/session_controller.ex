@@ -5,6 +5,7 @@ defmodule UnfinalWeb.SessionController do
 
   @clerk_session_key :clerk_oauth_session_params
   @clerk_return_to_key :clerk_return_to
+  @clerk_id_token_key :clerk_id_token
 
   def root(conn, _params), do: redirect(conn, to: ~p"/n")
 
@@ -15,12 +16,15 @@ defmodule UnfinalWeb.SessionController do
 
   def clerk_callback(conn, params), do: finish_clerk_oauth(conn, params)
 
-  def logout(conn, params) do
-    return_to = safe_return_to(Map.get(params, "return_to"))
+  def logout(conn, _params) do
+    id_token = get_session(conn, @clerk_id_token_key)
+    conn = clear_session(conn)
 
-    conn
-    |> clear_session()
-    |> redirect(to: return_to)
+    if is_binary(id_token) and id_token != "" do
+      redirect(conn, external: clerk_end_session_url(id_token))
+    else
+      redirect(conn, to: ~p"/")
+    end
   end
 
   defp start_clerk_oauth(conn, return_to) do
@@ -50,9 +54,10 @@ defmodule UnfinalWeb.SessionController do
     with session_params when is_map(session_params) <- session_params,
          {:ok, config} <- clerk_config(conn),
          config = Keyword.put(config, :session_params, session_params),
-         {:ok, %{user: user}} <- clerk_oauth().callback(config, params),
+         {:ok, %{user: user, token: %{"id_token" => id_token}}} <-
+           clerk_oauth().callback(config, params),
          {:ok, app_user} <- user_from_clerk(user) do
-      authenticate(conn, app_user, return_to)
+      authenticate(conn, app_user, id_token, return_to)
     else
       nil ->
         auth_failed(conn, "missing login session")
@@ -118,7 +123,20 @@ defmodule UnfinalWeb.SessionController do
 
   defp user_from_clerk(_user), do: {:error, :missing_email}
 
-  defp authenticate(conn, %{"email" => email} = user, return_to) do
+  defp clerk_end_session_url(id_token) do
+    {:ok, frontend_api_url} = fetch_env("CLERK_FRONTEND_API_URL")
+
+    frontend_api_url
+    |> String.trim_trailing("/")
+    |> URI.parse()
+    |> URI.append_path("/oauth/end_session")
+    |> URI.append_query(
+      URI.encode_query(id_token_hint: id_token, post_logout_redirect_uri: url(~p"/"))
+    )
+    |> URI.to_string()
+  end
+
+  defp authenticate(conn, %{"email" => email} = user, id_token, return_to) do
     redirect_to =
       if is_binary(return_to) and return_to != "/" and return_to != ~p"/" do
         return_to
@@ -133,6 +151,7 @@ defmodule UnfinalWeb.SessionController do
     |> configure_session(renew: true)
     |> put_session(:authenticated, true)
     |> put_session(:user, user)
+    |> put_session(@clerk_id_token_key, id_token)
     |> redirect(to: redirect_to)
   end
 
