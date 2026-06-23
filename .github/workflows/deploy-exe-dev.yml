@@ -1,0 +1,33 @@
+name: Deploy to exe.dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.UNFINAL_DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Run remote deploy script
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 22 "exedev@synopticon.exe.xyz" '
+            set -euo pipefail
+            cd /home/exedev/unfinal
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
+            chmod +x ./deploy-exe-dev.sh
+            ./deploy-exe-dev.sh
+          '
