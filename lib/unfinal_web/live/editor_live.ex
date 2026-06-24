@@ -270,7 +270,7 @@ defmodule UnfinalWeb.EditorLive do
           >
             <textarea
               name="content"
-              class="h-full min-h-0 w-full flex-1 resize-none overflow-y-auto bg-transparent px-[clamp(2rem,7vw,7rem)] py-10 text-left text-[22px] leading-10 outline-none placeholder:text-stone-300"
+              class="h-full min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-[clamp(2rem,7vw,7rem)] py-10 text-left text-[22px] leading-10 outline-none placeholder:text-stone-300"
             ><%= @content %></textarea>
           </.form>
 
