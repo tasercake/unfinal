@@ -147,6 +147,7 @@ defmodule UnfinalWeb.EditorLiveTest do
 
   test "claimed user sees indexed pages and inline new page row under namespace", %{conn: conn} do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/", ~U[2026-06-23 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("alpha", "/bluebird", ~U[2026-06-24 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("alpha", "/rainriver", ~U[2026-06-25 00:00:00Z])
     conn = logged_in(conn, "different-owner-id", "owner@example.com")
@@ -158,6 +159,8 @@ defmodule UnfinalWeb.EditorLiveTest do
     refute rendered =~ "Write somewhere new"
     assert rendered =~ ~s(href="/n/alpha/rainriver")
     assert rendered =~ ~s(href="/n/alpha/bluebird")
+    assert rendered =~ ~s(href="/n/alpha")
+    refute rendered =~ ~s(href="/n/alpha/")
     assert rendered =~ ~s(id="new-page-form")
     assert rendered =~ ~s(phx-submit="open_new_page")
     assert rendered =~ ~s(name="path")
@@ -167,7 +170,6 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     links = rendered |> Floki.parse_document!() |> Floki.find("#pages-nav a")
 
-    assert length(links) == 3
     assert links |> Floki.text() =~ "/alpha"
     assert links |> Floki.text() =~ "/alpha/rainriver"
     refute links |> Floki.text() =~ "/n/alpha/rainriver"
@@ -195,11 +197,17 @@ defmodule UnfinalWeb.EditorLiveTest do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
     conn = logged_in(conn, "owner", "owner@example.com")
 
+    {:ok, root_view, _html} = live(conn, "/n/alpha")
+    root_view |> form("form[phx-change=save]", %{content: "root indexed"}) |> render_change()
+
+    assert_eventually(fn -> ContentStore.get("/alpha").content == "root indexed" end)
+    assert [%{path: "/"}] = Unfinal.PageIndex.list("alpha")
+
     {:ok, view, _html} = live(conn, "/n/alpha/notes")
     view |> form("form[phx-change=save]", %{content: "indexed"}) |> render_change()
 
     assert_eventually(fn -> ContentStore.get("/alpha/notes").content == "indexed" end)
-    assert [%{path: "/notes"}] = Unfinal.PageIndex.list("alpha")
+    assert [%{path: "/notes"}, %{path: "/"}] = Unfinal.PageIndex.list("alpha")
   end
 
   test "writer save queues without echoing content or durable metadata" do

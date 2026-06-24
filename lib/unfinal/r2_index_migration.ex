@@ -171,6 +171,8 @@ defmodule Unfinal.R2IndexMigration do
   end
 
   @spec valid_relative_path?(term()) :: boolean()
+  defp valid_relative_path?("/"), do: true
+
   defp valid_relative_path?("/" <> rest) when rest != "" do
     rest |> String.split("/") |> DocumentPath.valid_segments?()
   end

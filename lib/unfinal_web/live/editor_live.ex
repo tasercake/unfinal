@@ -155,6 +155,8 @@ defmodule UnfinalWeb.EditorLive do
 
   defp page_paths(_segments, _claimed_namespace, _current_path), do: []
 
+  defp namespace_path(namespace, "/"), do: "/n/#{namespace}"
+
   defp namespace_path(namespace, path) do
     suffix = path |> String.trim() |> String.trim_leading("/")
     "/n/#{namespace}/#{suffix}"
@@ -165,6 +167,9 @@ defmodule UnfinalWeb.EditorLive do
 
   defp maybe_index_page(namespace, "/" <> path) when is_binary(namespace) do
     case String.split(path, "/", parts: 2) do
+      [^namespace] ->
+        PageIndex.upsert(namespace, "/", DateTime.utc_now())
+
       [^namespace, relative] when relative != "" ->
         PageIndex.upsert(namespace, "/" <> relative, DateTime.utc_now())
 
