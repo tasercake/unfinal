@@ -1,6 +1,6 @@
 defmodule Unfinal.NamespaceStore do
   @moduledoc """
-  Tiny namespace ownership store backed by namespaces.txt.
+  Tiny namespace ownership store backed by indexes/namespaces.txt.
   """
 
   use GenServer
@@ -8,6 +8,8 @@ defmodule Unfinal.NamespaceStore do
   @type namespace :: String.t()
   @type email :: String.t()
   @type owner :: %{email: email()}
+  @index_key "indexes/namespaces.txt"
+
   @type state :: %{namespace() => owner()}
 
   @spec start_link(term()) :: GenServer.on_start()
@@ -70,7 +72,10 @@ defmodule Unfinal.NamespaceStore do
     {:reply, namespace_for_email(state, email), state}
   end
 
-  def handle_call(:clear, _from, _state), do: {:reply, :ok, %{}}
+  def handle_call(:clear, _from, _state) do
+    :ok = write_all(%{})
+    {:reply, :ok, %{}}
+  end
 
   @spec namespace_for_email(state(), email()) :: namespace() | nil
   defp namespace_for_email(state, email) do
@@ -84,7 +89,7 @@ defmodule Unfinal.NamespaceStore do
 
   @spec read_all() :: state()
   defp read_all do
-    case File.read(file_path()) do
+    case Unfinal.ObjectIndex.get(@index_key) do
       {:ok, content} -> parse(content)
       {:error, _reason} -> %{}
     end
@@ -104,9 +109,6 @@ defmodule Unfinal.NamespaceStore do
 
   @spec write_all(state()) :: :ok
   defp write_all(state) do
-    path = file_path()
-    :ok = File.mkdir_p(Path.dirname(path))
-
     content =
       state
       |> Enum.sort_by(fn {namespace, _owner} -> namespace end)
@@ -114,9 +116,6 @@ defmodule Unfinal.NamespaceStore do
         "#{namespace}\t#{owner.email}\n"
       end)
 
-    File.write!(path, content)
+    :ok = Unfinal.ObjectIndex.put(@index_key, content)
   end
-
-  @spec file_path() :: String.t()
-  defp file_path, do: Path.join(System.get_env("UNFINAL_DATA_DIR", "./.data"), "namespaces.txt")
 end

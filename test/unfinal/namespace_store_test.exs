@@ -4,30 +4,16 @@ defmodule Unfinal.NamespaceStoreTest do
   alias Unfinal.NamespaceStore
 
   setup do
-    previous_data_dir = System.get_env("UNFINAL_DATA_DIR")
-
-    data_dir =
-      Path.join(
-        System.tmp_dir!(),
-        "unfinal-namespace-store-#{System.unique_integer([:positive])}"
-      )
-
-    System.put_env("UNFINAL_DATA_DIR", data_dir)
-    File.rm_rf!(data_dir)
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
+    Unfinal.ContentStore.clear()
     NamespaceStore.clear()
 
     on_exit(fn ->
       NamespaceStore.clear()
-      File.rm_rf!(data_dir)
-
-      if previous_data_dir do
-        System.put_env("UNFINAL_DATA_DIR", previous_data_dir)
-      else
-        System.delete_env("UNFINAL_DATA_DIR")
-      end
+      Unfinal.ContentStore.clear()
     end)
 
-    %{data_dir: data_dir}
+    :ok
   end
 
   test "validates strict lowercase alphanumeric hyphen namespaces" do
@@ -50,17 +36,17 @@ defmodule Unfinal.NamespaceStoreTest do
     end
   end
 
-  test "claims one namespace per email and persists namespace tab email", %{data_dir: data_dir} do
+  test "claims one namespace per email and persists namespace tab email" do
     user = %{"id" => "user-1", "email" => "one@example.com"}
 
     assert NamespaceStore.claim("alpha1", user) == :ok
     assert NamespaceStore.owner("alpha1") == %{email: "one@example.com"}
     assert NamespaceStore.namespace_for_email("one@example.com") == "alpha1"
 
-    assert File.read!(Path.join(data_dir, "namespaces.txt")) ==
-             "alpha1\tone@example.com\n"
+    assert Unfinal.ObjectIndex.get("indexes/namespaces.txt") ==
+             {:ok, "alpha1\tone@example.com\n"}
 
-    NamespaceStore.clear()
+    :sys.replace_state(NamespaceStore, fn _state -> %{} end)
     assert NamespaceStore.owner("alpha1") == %{email: "one@example.com"}
   end
 

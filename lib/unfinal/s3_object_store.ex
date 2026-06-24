@@ -48,6 +48,25 @@ defmodule Unfinal.S3ObjectStore do
   @impl true
   def clear, do: :ok
 
+  @spec get_object(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def get_object(key) when is_binary(key) do
+    case request(:get, key, [], "") do
+      {:ok, 200, _headers, body} -> {:ok, body}
+      {:ok, 404, _headers, _body} -> {:error, :not_found}
+      {:ok, status, _headers, body} -> {:error, {:http_status, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec put_object(String.t(), String.t()) :: :ok | {:error, term()}
+  def put_object(key, content) when is_binary(key) and is_binary(content) do
+    case request(:put, key, [], content) do
+      {:ok, status, _headers, _body} when status in [200, 201] -> :ok
+      {:ok, status, _headers, body} -> {:error, {:http_status, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp put_conditional(path, content, condition_headers, next_revision) do
     key = ContentStore.object_key(path)
     write_id = write_id()

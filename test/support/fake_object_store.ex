@@ -29,6 +29,20 @@ defmodule Unfinal.FakeObjectStore do
     end)
   end
 
+  def get_object(key) when is_binary(key) do
+    ensure_started()
+
+    case Agent.get(__MODULE__, &Map.get(&1, {:object, key})) do
+      nil -> {:error, :not_found}
+      content -> {:ok, content}
+    end
+  end
+
+  def put_object(key, content) when is_binary(key) and is_binary(content) do
+    ensure_started()
+    Agent.update(__MODULE__, &Map.put(&1, {:object, key}, content))
+  end
+
   @impl true
   def clear do
     ensure_started()

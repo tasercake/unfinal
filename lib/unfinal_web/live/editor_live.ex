@@ -4,13 +4,8 @@ defmodule UnfinalWeb.EditorLive do
   alias Unfinal.ContentStore
   alias Unfinal.DocumentPath
   alias Unfinal.NamespaceStore
+  alias Unfinal.PageIndex
   alias Unfinal.Writers
-
-  @blank_page_words ~w(
-    amber apple ash autumn bird blue brook cedar cloud copper dawn ember fern field
-    fox garden glow green harbor hill leaf meadow moon moss night ocean pine quiet
-    rain river sage sky stone sun swift valley violet willow wind winter
-  )
 
   @impl true
   def mount(params, session, socket) do
@@ -46,8 +41,7 @@ defmodule UnfinalWeb.EditorLive do
         claimed_namespace: claimed_namespace,
         writer?: writer?,
         show_claim_link?: show_claim_link?(session, claimed_namespace),
-        blank_page_paths:
-          if(connected?(socket), do: blank_page_paths(path, session, claimed_namespace), else: [])
+        page_paths: if(connected?(socket), do: page_paths(segments, claimed_namespace), else: [])
       )
 
     {:ok, socket}
@@ -65,6 +59,7 @@ defmodule UnfinalWeb.EditorLive do
         } = socket
       ) do
     :ok = ContentStore.queue_put(storage_path, content)
+    maybe_index_page(Map.get(socket.assigns, :claimed_namespace), storage_path)
     {:noreply, socket}
   end
 
@@ -138,40 +133,33 @@ defmodule UnfinalWeb.EditorLive do
   defp show_claim_link?(%{"authenticated" => true}, nil), do: true
   defp show_claim_link?(_session, _claimed_namespace), do: false
 
-  defp blank_page_paths(path, session, claimed_namespace) when is_binary(claimed_namespace) do
-    if path == "/n/#{claimed_namespace}" and Map.get(session, "authenticated", false) do
-      Enum.map(blank_page_path_generator().(), &namespace_path(claimed_namespace, &1))
-    else
-      []
-    end
+  defp page_paths([namespace | _rest], claimed_namespace) when namespace == claimed_namespace do
+    namespace
+    |> PageIndex.list()
+    |> Enum.map(&namespace_path(namespace, &1.path))
   end
 
-  defp blank_page_paths(_path, _session, _claimed_namespace), do: []
+  defp page_paths(_segments, _claimed_namespace), do: []
 
   defp namespace_path(namespace, path) do
     suffix = path |> String.trim() |> String.trim_leading("/")
     "/n/#{namespace}/#{suffix}"
   end
 
-  defp display_blank_page_path("/n" <> path), do: path
-  defp display_blank_page_path(path), do: path
+  defp display_page_path("/n" <> path), do: path
+  defp display_page_path(path), do: path
 
-  defp blank_page_path_generator do
-    Application.get_env(
-      :unfinal,
-      :blank_page_path_generator,
-      &__MODULE__.random_blank_page_paths/0
-    )
+  defp maybe_index_page(namespace, "/" <> path) when is_binary(namespace) do
+    case String.split(path, "/", parts: 2) do
+      [^namespace, relative] when relative != "" ->
+        PageIndex.upsert(namespace, "/" <> relative, DateTime.utc_now())
+
+      _other ->
+        :ok
+    end
   end
 
-  def random_blank_page_paths do
-    @blank_page_words
-    |> Enum.take_random(10)
-    |> Enum.chunk_every(2)
-    |> Enum.map(fn [first, second] -> "#{first}#{second}" end)
-  end
-
-  def blank_page_words, do: @blank_page_words
+  defp maybe_index_page(_namespace, _storage_path), do: :ok
 
   @impl true
   def render(assigns) do
@@ -189,16 +177,16 @@ defmodule UnfinalWeb.EditorLive do
               class="block rounded-lg bg-white/70 px-3 py-2 font-medium shadow-sm shadow-stone-200/50"
               href={@path}
             >
-              {display_blank_page_path(@path)}
+              {display_page_path(@path)}
             </a>
 
             <div class="mt-2 space-y-1 text-stone-500">
               <a
-                :for={path <- @blank_page_paths}
+                :for={path <- @page_paths}
                 class="block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950"
                 href={path}
               >
-                {display_blank_page_path(path)}
+                {display_page_path(path)}
               </a>
 
               <.form

@@ -32,6 +32,24 @@ defmodule Unfinal.FilesystemObjectStore do
     end
   end
 
+  @spec get_object(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def get_object(key) when is_binary(key) do
+    case File.read(Path.join(data_dir(), key)) do
+      {:ok, content} -> {:ok, content}
+      {:error, :enoent} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec put_object(String.t(), String.t()) :: :ok | {:error, term()}
+  def put_object(key, content) when is_binary(key) and is_binary(content) do
+    path = Path.join(data_dir(), key)
+
+    with :ok <- File.mkdir_p(Path.dirname(path)) do
+      File.write(path, content)
+    end
+  end
+
   @impl true
   def clear do
     data_dir()
