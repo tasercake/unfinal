@@ -32,6 +32,19 @@ defmodule Unfinal.FlakyObjectStore do
   end
 
   @impl true
+  def delete(path, base_etag, base_revision) do
+    Agent.get_and_update(__MODULE__, fn state ->
+      current = Map.get(state.docs, path, missing(path))
+
+      if current.etag == base_etag and current.revision == base_revision do
+        {{:ok, missing(path)}, %{state | docs: Map.delete(state.docs, path)}}
+      else
+        {{:stale, current}, state}
+      end
+    end)
+  end
+
+  @impl true
   def clear do
     ensure_started()
     Agent.update(__MODULE__, fn _ -> %{docs: %{}, fail_next?: false} end)

@@ -33,6 +33,21 @@ defmodule Unfinal.FilesystemObjectStore do
   end
 
   @impl true
+  def delete(path, base_etag, base_revision) do
+    with {:ok, current} <- get(path) do
+      if current.etag == base_etag and current.revision == base_revision do
+        case File.rm(envelope_path(path)) do
+          :ok -> {:ok, ContentStore.missing(path)}
+          {:error, :enoent} -> {:ok, ContentStore.missing(path)}
+          {:error, reason} -> {:error, reason}
+        end
+      else
+        {:stale, current}
+      end
+    end
+  end
+
+  @impl true
   def clear do
     data_dir()
     |> Path.join("documents")

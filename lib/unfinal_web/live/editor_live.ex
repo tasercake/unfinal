@@ -72,6 +72,13 @@ defmodule UnfinalWeb.EditorLive do
 
   @impl true
   def handle_info(
+        {:content_updated, storage_path, %{content: "", etag: nil, revision: 0}},
+        %{assigns: %{storage_path: storage_path}} = socket
+      ) do
+    {:noreply, assign(socket, content: "", etag: nil, revision: 0)}
+  end
+
+  def handle_info(
         {:content_updated, storage_path, %{revision: incoming_revision}},
         %{assigns: %{storage_path: storage_path, revision: current_revision}} = socket
       )

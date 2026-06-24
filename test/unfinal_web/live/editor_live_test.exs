@@ -263,6 +263,28 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert updated_socket.assigns.revision == 2
   end
 
+  test "readonly content update accepts delete tombstone despite lower revision" do
+    socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        storage_path: "/notes",
+        content: "old",
+        etag: "old-etag",
+        revision: 3
+      }
+    }
+
+    assert {:noreply, updated_socket} =
+             UnfinalWeb.EditorLive.handle_info(
+               {:content_updated, "/notes", %{content: "", etag: nil, revision: 0}},
+               socket
+             )
+
+    assert updated_socket.assigns.content == ""
+    assert updated_socket.assigns.etag == nil
+    assert updated_socket.assigns.revision == 0
+  end
+
   defp assert_eventually(fun, attempts \\ 20)
 
   defp assert_eventually(fun, attempts) when attempts > 0 do

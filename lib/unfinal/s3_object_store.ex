@@ -46,6 +46,29 @@ defmodule Unfinal.S3ObjectStore do
   def put(path, _content, _base_etag, _base_revision), do: {:stale, latest!(path)}
 
   @impl true
+  def delete(path, nil, 0), do: {:ok, ContentStore.missing(path)}
+
+  def delete(path, base_etag, _base_revision) when is_binary(base_etag) do
+    key = ContentStore.object_key(path)
+
+    case request(:delete, key, [{"if-match", base_etag}], "") do
+      {:ok, status, _headers, _body} when status in [200, 204] ->
+        {:ok, ContentStore.missing(path)}
+
+      {:ok, status, _headers, _body} when status in [404, 409, 412] ->
+        {:stale, latest!(path)}
+
+      {:ok, status, _headers, body} ->
+        {:error, {:http_status, status, body}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def delete(path, _base_etag, _base_revision), do: {:stale, latest!(path)}
+
+  @impl true
   def clear, do: :ok
 
   defp put_conditional(path, content, condition_headers, next_revision) do
@@ -175,6 +198,11 @@ defmodule Unfinal.S3ObjectStore do
 
         :put ->
           :httpc.request(:put, req, [], body_format: :binary)
+
+        :delete ->
+          :httpc.request(:delete, {String.to_charlist(url), http_headers}, [],
+            body_format: :binary
+          )
       end
 
     case result do
