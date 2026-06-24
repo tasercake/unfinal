@@ -32,6 +32,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert root_html =~ ~s(<article id="readonly-document")
     assert notes_html =~ ~s(<article id="readonly-document")
     assert root_html =~ "root text"
+    refute root_html =~ ~s(id="pages-nav")
     assert existing_html =~ "saved text"
     assert render(root) =~ "root text"
     refute render(notes) =~ "saved text"
@@ -68,6 +69,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     {:ok, _view, html} = live(conn, "/n/notes")
 
     assert html =~ ~s(<article id="readonly-document")
+    assert html =~ ~s(id="pages-nav")
     refute html =~ "<textarea"
     assert html =~ "Unfinal"
     assert html =~ ~s(id="login-bar")

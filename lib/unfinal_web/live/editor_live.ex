@@ -41,6 +41,7 @@ defmodule UnfinalWeb.EditorLive do
         claimed_namespace: claimed_namespace,
         writer?: writer?,
         show_claim_link?: show_claim_link?(session, claimed_namespace),
+        show_pages_nav?: show_pages_nav?(segments),
         page_paths: if(connected?(socket), do: page_paths(segments, claimed_namespace), else: [])
       )
 
@@ -140,6 +141,9 @@ defmodule UnfinalWeb.EditorLive do
   defp show_claim_link?(%{"authenticated" => true}, nil), do: true
   defp show_claim_link?(_session, _claimed_namespace), do: false
 
+  defp show_pages_nav?([_namespace | _rest]), do: true
+  defp show_pages_nav?([]), do: false
+
   defp page_paths([namespace | _rest], claimed_namespace) when namespace == claimed_namespace do
     namespace
     |> PageIndex.list()
@@ -176,7 +180,7 @@ defmodule UnfinalWeb.EditorLive do
         <aside class="flex max-h-72 min-h-0 flex-col border-r border-stone-200/70 bg-stone-100 px-4 py-4 text-left lg:max-h-none">
           <h1 class="text-[15px] font-semibold tracking-tight">Unfinal</h1>
 
-          <nav id="pages-nav" class="mt-7 text-sm" aria-label="Pages">
+          <nav :if={@show_pages_nav?} id="pages-nav" class="mt-7 text-sm" aria-label="Pages">
             <h2 class="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">
               Pages
             </h2>
