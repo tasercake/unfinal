@@ -65,6 +65,26 @@ defmodule UnfinalWeb.EditorLiveTest do
     end
   end
 
+  test "unauthenticated content view includes social preview metadata", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/n/notes")
+
+    assert html =~ ~r/<title[^>]*>Unfinal<\/title>/
+    assert html =~ ~s(<meta property="og:title" content="Unfinal")
+
+    assert html =~
+             ~s(<meta property="og:description" content="The anti-perfectionist blogging platform")
+
+    assert html =~ ~s(<meta property="og:type" content="website")
+    assert html =~ ~s(<meta property="og:url" content="https://unfinal.page")
+    assert html =~ ~s(<meta name="twitter:card" content="summary")
+    assert html =~ ~s(<meta name="twitter:title" content="Unfinal")
+
+    assert html =~
+             ~s(<meta name="twitter:description" content="The anti-perfectionist blogging platform")
+
+    refute html =~ "Phoenix Framework"
+  end
+
   test "unauthenticated content view shows readonly page chrome", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/n/notes")
 

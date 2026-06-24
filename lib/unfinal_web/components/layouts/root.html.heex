@@ -4,9 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="Unfinal" suffix=" · Phoenix Framework">
+    <.live_title default="Unfinal">
       {assigns[:page_title]}
     </.live_title>
+    <meta property="og:title" content="Unfinal" />
+    <meta property="og:description" content="The anti-perfectionist blogging platform" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://unfinal.page" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Unfinal" />
+    <meta name="twitter:description" content="The anti-perfectionist blogging platform" />
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
     </script>
