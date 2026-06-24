@@ -21,6 +21,7 @@ defmodule UnfinalWeb.EditorLive do
     storage_path = storage_path(segments)
 
     claimed_namespace = claimed_namespace(session)
+    viewed_namespace = viewed_namespace(segments)
     writer? = writer?(segments, session, claimed_namespace)
 
     if connected?(socket) and not writer?,
@@ -39,11 +40,11 @@ defmodule UnfinalWeb.EditorLive do
         authenticated: Map.get(session, "authenticated", false),
         user: Map.get(session, "user"),
         claimed_namespace: claimed_namespace,
+        viewed_namespace: viewed_namespace,
         writer?: writer?,
         show_claim_link?: show_claim_link?(session, claimed_namespace),
         show_pages_nav?: show_pages_nav?(segments),
-        page_paths:
-          if(connected?(socket), do: page_paths(segments, claimed_namespace, path), else: [])
+        page_paths: if(connected?(socket), do: page_paths(segments, path), else: [])
       )
 
     {:ok, socket}
@@ -70,7 +71,7 @@ defmodule UnfinalWeb.EditorLive do
   def handle_event(
         "open_new_page",
         %{"path" => path},
-        %{assigns: %{claimed_namespace: namespace}} = socket
+        %{assigns: %{claimed_namespace: namespace, viewed_namespace: namespace}} = socket
       )
       when is_binary(namespace) do
     slug = path |> String.trim() |> String.trim_leading("/")
@@ -145,15 +146,17 @@ defmodule UnfinalWeb.EditorLive do
   defp show_pages_nav?([_namespace | _rest]), do: true
   defp show_pages_nav?([]), do: false
 
-  defp page_paths([namespace | _rest], claimed_namespace, current_path)
-       when namespace == claimed_namespace do
+  defp viewed_namespace([namespace | _rest]), do: namespace
+  defp viewed_namespace([]), do: nil
+
+  defp page_paths([namespace | _rest], current_path) do
     namespace
     |> PageIndex.list()
     |> Enum.map(&namespace_path(namespace, &1.path))
     |> Enum.reject(&(&1 == current_path))
   end
 
-  defp page_paths(_segments, _claimed_namespace, _current_path), do: []
+  defp page_paths(_segments, _current_path), do: []
 
   defp namespace_path(namespace, "/"), do: "/n/#{namespace}"
 
@@ -194,7 +197,7 @@ defmodule UnfinalWeb.EditorLive do
             </h2>
             <div class="space-y-1 text-stone-500">
               <.form
-                :if={is_binary(@claimed_namespace)}
+                :if={is_binary(@claimed_namespace) and @viewed_namespace == @claimed_namespace}
                 for={%{}}
                 id="new-page-form"
                 phx-submit="open_new_page"

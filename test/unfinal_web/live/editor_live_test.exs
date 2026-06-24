@@ -175,6 +175,23 @@ defmodule UnfinalWeb.EditorLiveTest do
     refute links |> Floki.text() =~ "/n/alpha/rainriver"
   end
 
+  test "claimed user viewing another namespace sees its pages but no new page form", %{conn: conn} do
+    :ok = NamespaceStore.claim("kp", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("kp", "/private", ~U[2026-06-24 00:00:00Z])
+    :ok = Unfinal.PageIndex.upsert("tanay", "/", ~U[2026-06-23 00:00:00Z])
+    :ok = Unfinal.PageIndex.upsert("tanay", "/edtech", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/tanay")
+    rendered = render(view)
+
+    assert rendered =~ ~s(href="/n/tanay/edtech")
+    refute rendered =~ ~s(href="/n/kp/private")
+    refute rendered =~ ~s(id="new-page-form")
+    refute rendered =~ ~s(phx-submit="open_new_page")
+    refute rendered =~ "<textarea"
+  end
+
   test "claimed user sees indexed current page only once in sidebar", %{conn: conn} do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
     :ok = Unfinal.PageIndex.upsert("alpha", "/bluebird", ~U[2026-06-24 00:00:00Z])
