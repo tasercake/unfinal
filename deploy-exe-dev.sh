@@ -29,6 +29,26 @@ append_env_if_missing() {
   fi
 }
 
+quote_shell() {
+  printf '%q' "$1"
+}
+
+check_writable_dir() {
+  local dir=$1
+
+  if [[ -d "${dir}" && ! -w "${dir}" ]]; then
+    printf 'Directory exists but is not writable by %s: %s\n' "$(id -un)" "${dir}" >&2
+    printf 'Fix ownership, then rerun: sudo chown -R %s:%s %s\n' "$(id -un)" "$(id -gn)" "$(quote_shell "${dir}")" >&2
+    exit 1
+  fi
+}
+
+check_generated_dirs_writable() {
+  check_writable_dir "${APP_DIR}/_build"
+  check_writable_dir "${APP_DIR}/deps"
+  check_writable_dir "${APP_DIR}/priv/static"
+}
+
 SERVICE_NAME=${SERVICE_NAME:-unfinal}
 APP_DIR=${APP_DIR:-$(pwd -P)}
 PORT=${PORT:-8000}
@@ -82,6 +102,8 @@ if ! sudo grep -Eq '^SECRET_KEY_BASE=' "${ENV_FILE}"; then
 else
   log "preserve existing SECRET_KEY_BASE in ${ENV_FILE}"
 fi
+
+check_generated_dirs_writable
 
 log "fetch deps"
 mix deps.get --only prod
