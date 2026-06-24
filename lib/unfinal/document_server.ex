@@ -35,7 +35,7 @@ defmodule Unfinal.DocumentServer do
   def handle_call(:get, _from, state), do: {:reply, state.document, state}
 
   def handle_call({:put, content, base_etag, base_revision}, _from, state) do
-    case ContentStore.adapter().put(state.path, content, base_etag, base_revision) do
+    case write_content(state.path, content, base_etag, base_revision) do
       {:ok, doc} ->
         broadcast(state.path, doc)
         state = after_successful_write(state, doc, content)
@@ -64,12 +64,7 @@ defmodule Unfinal.DocumentServer do
 
     state = %{state | flush_timer: nil}
 
-    case ContentStore.adapter().put(
-           state.path,
-           flushed_content,
-           state.document.etag,
-           state.document.revision
-         ) do
+    case write_content(state.path, flushed_content, state.document.etag, state.document.revision) do
       {:ok, doc} ->
         broadcast(state.path, doc)
         {:noreply, after_successful_write(state, doc, flushed_content)}
@@ -83,6 +78,16 @@ defmodule Unfinal.DocumentServer do
         {:noreply, schedule_flush(state)}
     end
   end
+
+  defp write_content(path, content, base_etag, base_revision) do
+    if blank?(content) do
+      ContentStore.adapter().delete(path, base_etag, base_revision)
+    else
+      ContentStore.adapter().put(path, content, base_etag, base_revision)
+    end
+  end
+
+  defp blank?(content), do: String.trim(content) == ""
 
   defp after_successful_write(state, doc, flushed_content) do
     state = %{state | document: doc}

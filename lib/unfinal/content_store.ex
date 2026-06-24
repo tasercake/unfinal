@@ -26,6 +26,7 @@ defmodule Unfinal.ContentStore do
 
   @callback get(String.t()) :: {:ok, Document.t()} | {:error, term()}
   @callback put(String.t(), content(), String.t() | nil, non_neg_integer()) :: put_result()
+  @callback delete(String.t(), String.t() | nil, non_neg_integer()) :: put_result()
   @callback clear() :: :ok
 
   @spec topic(path()) :: String.t()

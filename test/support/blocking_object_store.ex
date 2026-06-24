@@ -22,6 +22,11 @@ defmodule Unfinal.BlockingObjectStore do
   end
 
   @impl true
+  def delete(path, base_etag, base_revision) do
+    Unfinal.FakeObjectStore.delete(path, base_etag, base_revision)
+  end
+
+  @impl true
   def clear, do: Unfinal.FakeObjectStore.clear()
 
   def set_parent(pid) when is_pid(pid), do: Agent.update(__MODULE__, fn _ -> pid end)

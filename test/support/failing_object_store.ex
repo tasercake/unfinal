@@ -8,5 +8,8 @@ defmodule Unfinal.FailingObjectStore do
   def put(_path, _content, _base_etag, _base_revision), do: {:error, :write_not_supported}
 
   @impl true
+  def delete(_path, _base_etag, _base_revision), do: {:error, :delete_not_supported}
+
+  @impl true
   def clear, do: :ok
 end

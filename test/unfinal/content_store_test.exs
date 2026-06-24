@@ -30,6 +30,32 @@ defmodule Unfinal.ContentStoreTest do
     assert ContentStore.get("/notes") == updated
   end
 
+  test "blank new documents are not stored" do
+    base = ContentStore.get("/blank-new")
+
+    assert {:ok, %ContentStore.Document{content: "", etag: nil, revision: 0}} =
+             ContentStore.put("/blank-new", "  \n\t  ", base.etag, base.revision)
+
+    refute Unfinal.FakeObjectStore.stored?("/blank-new")
+
+    assert %ContentStore.Document{content: "", etag: nil, revision: 0} =
+             ContentStore.get("/blank-new")
+  end
+
+  test "blank existing documents are removed from storage" do
+    base = ContentStore.get("/blank-existing")
+    assert {:ok, created} = ContentStore.put("/blank-existing", "saved", base.etag, base.revision)
+    assert Unfinal.FakeObjectStore.stored?("/blank-existing")
+
+    assert {:ok, %ContentStore.Document{content: "", etag: nil, revision: 0}} =
+             ContentStore.put("/blank-existing", "\n  ", created.etag, created.revision)
+
+    refute Unfinal.FakeObjectStore.stored?("/blank-existing")
+
+    assert %ContentStore.Document{content: "", etag: nil, revision: 0} =
+             ContentStore.get("/blank-existing")
+  end
+
   test "stale writes return latest document and do not clobber" do
     base = ContentStore.get("/notes")
     assert {:ok, first} = ContentStore.put("/notes", "first", base.etag, base.revision)
