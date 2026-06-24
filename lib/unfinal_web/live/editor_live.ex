@@ -44,8 +44,8 @@ defmodule UnfinalWeb.EditorLive do
         writer?: writer?,
         show_claim_link?: show_claim_link?(session, claimed_namespace),
         show_pages_nav?: show_pages_nav?(segments),
-        root_page_path: root_page_path(segments, path, connected?(socket)),
-        page_paths: if(connected?(socket), do: page_paths(segments, path), else: [])
+        root_page_path: root_page_path(segments, path, true),
+        page_paths: page_paths(segments, path)
       )
 
     {:ok, socket}

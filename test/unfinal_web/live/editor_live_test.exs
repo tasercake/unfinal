@@ -152,7 +152,11 @@ defmodule UnfinalWeb.EditorLiveTest do
     :ok = Unfinal.PageIndex.upsert("alpha", "/rainriver", ~U[2026-06-25 00:00:00Z])
     conn = logged_in(conn, "different-owner-id", "owner@example.com")
 
-    {:ok, view, _html} = live(conn, "/n/alpha")
+    {:ok, view, html} = live(conn, "/n/alpha")
+
+    assert html =~ ~s(href="/n/alpha/rainriver")
+    assert html =~ ~s(href="/n/alpha/bluebird")
+
     rendered = render(view)
 
     assert rendered =~ "Pages"
