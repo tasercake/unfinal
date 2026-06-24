@@ -44,6 +44,7 @@ defmodule UnfinalWeb.EditorLive do
         writer?: writer?,
         show_claim_link?: show_claim_link?(session, claimed_namespace),
         show_pages_nav?: show_pages_nav?(segments),
+        root_page_path: root_page_path(segments, path, connected?(socket)),
         page_paths: if(connected?(socket), do: page_paths(segments, path), else: [])
       )
 
@@ -149,11 +150,23 @@ defmodule UnfinalWeb.EditorLive do
   defp viewed_namespace([namespace | _rest]), do: namespace
   defp viewed_namespace([]), do: nil
 
+  defp root_page_path([namespace], _current_path, _connected?), do: namespace_path(namespace, "/")
+
+  defp root_page_path([namespace | _rest], _current_path, true) do
+    if Enum.any?(PageIndex.list(namespace), &(&1.path == "/")) do
+      namespace_path(namespace, "/")
+    end
+  end
+
+  defp root_page_path(_segments, _current_path, _connected?), do: nil
+
   defp page_paths([namespace | _rest], current_path) do
+    root_path = namespace_path(namespace, "/")
+
     namespace
     |> PageIndex.list()
     |> Enum.map(&namespace_path(namespace, &1.path))
-    |> Enum.reject(&(&1 == current_path))
+    |> Enum.reject(&(&1 in [current_path, root_path]))
   end
 
   defp page_paths(_segments, _current_path), do: []
@@ -196,6 +209,27 @@ defmodule UnfinalWeb.EditorLive do
               Pages
             </h2>
             <div class="space-y-1 text-stone-500">
+              <a
+                :if={@root_page_path}
+                class={[
+                  "block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
+                  @root_page_path == @path &&
+                    "bg-white/70 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                ]}
+                href={@root_page_path}
+              >
+                {display_page_path(@root_page_path)}
+              </a>
+
+              <div
+                :if={
+                  @root_page_path &&
+                    ((is_binary(@claimed_namespace) and @viewed_namespace == @claimed_namespace) or
+                       @page_paths != [])
+                }
+                class="mx-3 my-2 border-t border-stone-200/80"
+              />
+
               <.form
                 :if={is_binary(@claimed_namespace) and @viewed_namespace == @claimed_namespace}
                 for={%{}}
@@ -217,6 +251,7 @@ defmodule UnfinalWeb.EditorLive do
               </.form>
 
               <a
+                :if={@path != @root_page_path}
                 class="block rounded-lg bg-white/70 px-3 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                 href={@path}
               >

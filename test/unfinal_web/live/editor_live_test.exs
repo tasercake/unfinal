@@ -169,7 +169,9 @@ defmodule UnfinalWeb.EditorLiveTest do
              view |> form("#new-page-form", %{path: "new-page"}) |> render_submit()
 
     links = rendered |> Floki.parse_document!() |> Floki.find("#pages-nav a")
+    link_hrefs = Enum.map(links, &Floki.attribute(&1, "href"))
 
+    assert link_hrefs == [["/n/alpha"], ["/n/alpha/rainriver"], ["/n/alpha/bluebird"]]
     assert links |> Floki.text() =~ "/alpha"
     assert links |> Floki.text() =~ "/alpha/rainriver"
     refute links |> Floki.text() =~ "/n/alpha/rainriver"
@@ -194,20 +196,54 @@ defmodule UnfinalWeb.EditorLiveTest do
 
   test "claimed user sees indexed current page only once in sidebar", %{conn: conn} do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/", ~U[2026-06-23 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("alpha", "/bluebird", ~U[2026-06-24 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("alpha", "/rainriver", ~U[2026-06-25 00:00:00Z])
     conn = logged_in(conn, "different-owner-id", "owner@example.com")
 
     {:ok, view, _html} = live(conn, "/n/alpha/bluebird")
 
+    rendered = render(view)
+
     current_page_link_count =
-      view
-      |> render()
+      rendered
       |> String.split(~s(href="/n/alpha/bluebird"))
       |> length()
       |> Kernel.-(1)
 
     assert current_page_link_count == 1
+
+    links = rendered |> Floki.parse_document!() |> Floki.find("#pages-nav a")
+
+    assert Enum.map(links, &Floki.attribute(&1, "href")) == [
+             ["/n/alpha"],
+             ["/n/alpha/bluebird"],
+             ["/n/alpha/rainriver"]
+           ]
+  end
+
+  test "claimed user viewing unindexed namespace root sees current root but child pages do not invent root",
+       %{
+         conn: conn
+       } do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/bluebird", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "different-owner-id", "owner@example.com")
+
+    {:ok, root_view, _html} = live(conn, "/n/alpha")
+
+    root_links = root_view |> render() |> Floki.parse_document!() |> Floki.find("#pages-nav a")
+
+    assert Enum.map(root_links, &Floki.attribute(&1, "href")) == [
+             ["/n/alpha"],
+             ["/n/alpha/bluebird"]
+           ]
+
+    {:ok, child_view, _html} = live(conn, "/n/alpha/bluebird")
+
+    child_links = child_view |> render() |> Floki.parse_document!() |> Floki.find("#pages-nav a")
+
+    assert Enum.map(child_links, &Floki.attribute(&1, "href")) == [["/n/alpha/bluebird"]]
   end
 
   test "writer save updates namespace page index", %{conn: conn} do
