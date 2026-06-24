@@ -38,6 +38,12 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert render(existing) =~ "saved text"
   end
 
+  test "redirects trailing slash on editor root and preserves query string", %{conn: conn} do
+    conn = get(conn, "/n/?draft=1")
+
+    assert redirected_to(conn, 301) == "/n?draft=1"
+  end
+
   test "accepts only valid document paths", %{conn: conn} do
     for path <- ["/n", "/n/alpha", "/n/alpha-1", "/n/nested/page-2"] do
       assert {:ok, _view, _html} = live(conn, path)

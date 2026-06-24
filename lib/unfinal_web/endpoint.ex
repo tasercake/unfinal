@@ -55,6 +55,29 @@ defmodule UnfinalWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
+  plug :redirect_trailing_slash
   plug UnfinalWeb.Plug.SessionLoader
   plug UnfinalWeb.Router
+
+  defp redirect_trailing_slash(%Plug.Conn{request_path: "/"} = conn, _opts), do: conn
+
+  defp redirect_trailing_slash(
+         %Plug.Conn{request_path: path, query_string: query_string} = conn,
+         _opts
+       ) do
+    if String.ends_with?(path, "/") do
+      conn
+      |> Plug.Conn.put_resp_header(
+        "location",
+        path |> String.trim_trailing("/") |> append_query_string(query_string)
+      )
+      |> Plug.Conn.send_resp(:moved_permanently, "")
+      |> Plug.Conn.halt()
+    else
+      conn
+    end
+  end
+
+  defp append_query_string(path, ""), do: path
+  defp append_query_string(path, query_string), do: path <> "?" <> query_string
 end
