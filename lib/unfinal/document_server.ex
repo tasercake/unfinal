@@ -50,8 +50,7 @@ defmodule Unfinal.DocumentServer do
   end
 
   def handle_call({:queue_put, content}, _from, state) do
-    document = %{state.document | content: content}
-    state = %{state | document: document, pending_content: content} |> schedule_flush()
+    state = %{state | pending_content: content} |> schedule_flush()
     {:reply, :ok, state}
   end
 

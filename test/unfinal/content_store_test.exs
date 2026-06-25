@@ -121,32 +121,12 @@ defmodule Unfinal.ContentStoreTest do
     assert Process.alive?(pid)
   end
 
-  test "queued put is readable before durable flush" do
-    Application.put_env(:unfinal, :content_store_flush_interval_ms, 60_000)
-
-    assert :ok = ContentStore.queue_put("/queued-before-flush", "draft")
-
-    assert %ContentStore.Document{content: "draft", etag: nil, revision: 0} =
-             ContentStore.get("/queued-before-flush")
-  end
-
-  test "coalesced queued puts are readable as newest content before durable flush" do
-    Application.put_env(:unfinal, :content_store_flush_interval_ms, 60_000)
-
-    assert :ok = ContentStore.queue_put("/queued-newest", "one")
-    assert :ok = ContentStore.queue_put("/queued-newest", "two")
-
-    assert %ContentStore.Document{content: "two", etag: nil, revision: 0} =
-             ContentStore.get("/queued-newest")
-  end
-
   test "queued puts coalesce, persist latest content, and broadcast only after durable flush" do
     Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
     Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic("/queued"))
 
     assert :ok = ContentStore.queue_put("/queued", "one")
     assert :ok = ContentStore.queue_put("/queued", "two")
-    assert ContentStore.get("/queued").content == "two"
     refute_receive {:content_updated, "/queued", _}, 5
 
     assert_receive {:content_updated, "/queued", %{content: "two", revision: 1, etag: etag}}, 200
