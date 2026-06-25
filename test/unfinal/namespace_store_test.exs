@@ -5,12 +5,12 @@ defmodule Unfinal.NamespaceStoreTest do
 
   setup do
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
-    Unfinal.ContentStore.clear()
+    Unfinal.Documents.clear()
     NamespaceStore.clear()
 
     on_exit(fn ->
       NamespaceStore.clear()
-      Unfinal.ContentStore.clear()
+      Unfinal.Documents.clear()
     end)
 
     :ok

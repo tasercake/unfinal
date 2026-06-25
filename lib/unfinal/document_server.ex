@@ -1,16 +1,33 @@
 defmodule Unfinal.DocumentServer do
-  @moduledoc false
+  @moduledoc """
+  Per-document live state process.
+
+  Single-BEAM-node ownership: Registry/DynamicSupervisor ensure one process per path on this
+  node only. Writes ACK after memory update, then flush durably via debounced async tasks.
+  """
 
   use GenServer
 
+  require Logger
+
   alias Unfinal.ContentStore
   alias Unfinal.ContentStore.Document
+  alias Unfinal.Documents
+
+  @initial_retry_ms 25
+  @max_retry_ms 1_000
 
   @type state :: %{
           path: ContentStore.path(),
           document: Document.t(),
-          pending_content: ContentStore.content() | nil,
-          flush_timer: reference() | nil
+          version: non_neg_integer(),
+          dirty_version: non_neg_integer() | nil,
+          dirty_content: ContentStore.content() | nil,
+          flush_timer: reference() | nil,
+          flush_ref: reference() | nil,
+          flushing_version: non_neg_integer() | nil,
+          flushing_content: ContentStore.content() | nil,
+          retry_ms: pos_integer()
         }
 
   @spec start_link(ContentStore.path()) :: GenServer.on_start()
@@ -28,7 +45,19 @@ defmodule Unfinal.DocumentServer do
         {:error, _reason} -> ContentStore.missing(path)
       end
 
-    {:ok, %{path: path, document: document, pending_content: nil, flush_timer: nil}}
+    {:ok,
+     %{
+       path: path,
+       document: document,
+       version: 0,
+       dirty_version: nil,
+       dirty_content: nil,
+       flush_timer: nil,
+       flush_ref: nil,
+       flushing_version: nil,
+       flushing_content: nil,
+       retry_ms: @initial_retry_ms
+     }}
   end
 
   @impl true
@@ -38,11 +67,10 @@ defmodule Unfinal.DocumentServer do
     case write_content(state.path, content, base_etag, base_revision) do
       {:ok, doc} ->
         broadcast(state.path, doc)
-        state = after_successful_write(state, doc, content)
-        {:reply, {:ok, doc}, state}
+        {:reply, {:ok, doc}, %{state | document: doc}}
 
       {:stale, doc} ->
-        {:reply, {:stale, doc}, %{state | document: doc}}
+        {:reply, {:stale, doc}, %{state | document: merge_durable_metadata(state.document, doc)}}
 
       {:error, reason} ->
         {:reply, {:error, reason}, state}
@@ -50,38 +78,117 @@ defmodule Unfinal.DocumentServer do
   end
 
   def handle_call({:queue_put, content}, _from, state) do
-    document = %{state.document | content: content}
-    state = %{state | document: document, pending_content: content} |> schedule_flush()
+    version = state.version + 1
+
+    %Document{} = current_document = state.document
+    document = %Document{current_document | content: content}
+
+    state =
+      %{
+        state
+        | document: document,
+          version: version,
+          dirty_version: version,
+          dirty_content: content
+      }
+      |> schedule_flush(ContentStore.flush_interval_ms())
+
     {:reply, :ok, state}
   end
 
   @impl true
-  def handle_info(:flush, %{pending_content: nil} = state) do
-    {:noreply, %{state | flush_timer: nil}}
-  end
-
   def handle_info(:flush, state) do
-    flushed_content = state.pending_content
-
     state = %{state | flush_timer: nil}
 
-    case write_content(state.path, flushed_content, state.document.etag, state.document.revision) do
-      {:ok, doc} ->
-        broadcast(state.path, doc)
-        {:noreply, after_successful_write(state, doc, flushed_content)}
+    cond do
+      is_nil(state.dirty_version) ->
+        {:noreply, state}
 
-      {:stale, doc} ->
-        {:noreply, %{state | document: doc} |> schedule_flush()}
+      not is_nil(state.flush_ref) ->
+        {:noreply, schedule_flush(state, ContentStore.flush_interval_ms())}
 
-      {:error, reason} ->
-        require Logger
-        Logger.warning("content flush failed for #{state.path}: #{inspect(reason)}")
-        {:noreply, schedule_flush(state)}
+      true ->
+        content = state.dirty_content
+        version = state.dirty_version
+        base_etag = state.document.etag
+        base_revision = state.document.revision
+        path = state.path
+
+        task =
+          Task.Supervisor.async_nolink(Unfinal.DocumentTaskSupervisor, fn ->
+            write_content(path, content, base_etag, base_revision)
+          end)
+
+        {:noreply,
+         %{
+           state
+           | flush_ref: task.ref,
+             flushing_version: version,
+             flushing_content: content
+         }}
     end
+  end
+
+  def handle_info({ref, result}, %{flush_ref: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, state |> handle_flush_result(result) |> clear_flushing()}
+  end
+
+  def handle_info({ref, _result}, state) when is_reference(ref), do: {:noreply, state}
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{flush_ref: ref} = state) do
+    Logger.warning("content flush task crashed for #{state.path}: #{inspect(reason)}")
+    {:noreply, retry_later(clear_flushing(state))}
+  end
+
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:noreply, state}
+
+  defp handle_flush_result(state, {:ok, doc}) do
+    state = %{
+      state
+      | document: merge_durable_metadata(state.document, doc),
+        retry_ms: @initial_retry_ms
+    }
+
+    state =
+      if state.dirty_version == state.flushing_version and
+           state.dirty_content == state.flushing_content do
+        %{state | dirty_version: nil, dirty_content: nil}
+      else
+        state
+      end
+
+    broadcast(state.path, state.document)
+
+    if is_nil(state.dirty_version) do
+      state
+    else
+      schedule_flush(state, ContentStore.flush_interval_ms())
+    end
+  end
+
+  defp handle_flush_result(state, {:stale, doc}) do
+    %{state | document: merge_durable_metadata(state.document, doc), retry_ms: @initial_retry_ms}
+    |> schedule_flush(ContentStore.flush_interval_ms())
+  end
+
+  defp handle_flush_result(state, {:error, reason}) do
+    Logger.warning("content flush failed for #{state.path}: #{inspect(reason)}")
+    retry_later(state)
+  end
+
+  defp clear_flushing(state) do
+    %{state | flush_ref: nil, flushing_version: nil, flushing_content: nil}
+  end
+
+  defp retry_later(state) do
+    retry_ms = min(state.retry_ms * 2, @max_retry_ms)
+    %{state | retry_ms: retry_ms} |> schedule_flush(state.retry_ms)
   end
 
   defp write_content(path, content, base_etag, base_revision) do
     if blank?(content) do
+      # Preserve current blank-means-delete behavior.
       ContentStore.adapter().delete(path, base_etag, base_revision)
     else
       ContentStore.adapter().put(path, content, base_etag, base_revision)
@@ -90,28 +197,23 @@ defmodule Unfinal.DocumentServer do
 
   defp blank?(content), do: String.trim(content) == ""
 
-  defp after_successful_write(state, doc, flushed_content) do
-    state = %{state | document: doc}
-
-    if state.pending_content == flushed_content do
-      cancel_timer(state.flush_timer)
-      %{state | pending_content: nil, flush_timer: nil}
-    else
-      schedule_flush(state)
-    end
+  defp merge_durable_metadata(%Document{} = visible_doc, %Document{} = durable_doc) do
+    %Document{
+      visible_doc
+      | etag: durable_doc.etag,
+        revision: durable_doc.revision,
+        write_id: durable_doc.write_id
+    }
   end
 
-  defp schedule_flush(%{flush_timer: nil} = state) do
-    %{state | flush_timer: Process.send_after(self(), :flush, ContentStore.flush_interval_ms())}
+  defp schedule_flush(%{flush_timer: nil} = state, delay_ms) do
+    %{state | flush_timer: Process.send_after(self(), :flush, delay_ms)}
   end
 
-  defp schedule_flush(state), do: state
-
-  defp cancel_timer(nil), do: :ok
-  defp cancel_timer(timer), do: Process.cancel_timer(timer)
+  defp schedule_flush(state, _delay_ms), do: state
 
   defp broadcast(path, doc) do
-    Phoenix.PubSub.broadcast(Unfinal.PubSub, ContentStore.topic(path), {
+    Phoenix.PubSub.broadcast(Unfinal.PubSub, Documents.topic(path), {
       :content_updated,
       path,
       %{content: doc.content, etag: doc.etag, revision: doc.revision}

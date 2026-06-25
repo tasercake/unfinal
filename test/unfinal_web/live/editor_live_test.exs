@@ -2,17 +2,17 @@ defmodule UnfinalWeb.EditorLiveTest do
   use UnfinalWeb.ConnCase
 
   alias Phoenix.LiveView.Socket
-  alias Unfinal.ContentStore
+  alias Unfinal.Documents
   alias Unfinal.NamespaceStore
 
   setup do
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
     Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
-    ContentStore.clear()
+    Documents.clear()
     NamespaceStore.clear()
 
     on_exit(fn ->
-      ContentStore.clear()
+      Documents.clear()
       NamespaceStore.clear()
       Application.delete_env(:unfinal, :content_store_flush_interval_ms)
     end)
@@ -119,9 +119,9 @@ defmodule UnfinalWeb.EditorLiveTest do
     root |> form("form[phx-change=save]", %{content: "root body"}) |> render_change()
     render_hook(child, "save", %{"content" => "blocked"})
 
-    assert_eventually(fn -> ContentStore.get("/").content == "root body" end)
-    assert ContentStore.get("/n").content == ""
-    assert ContentStore.get("/alpha").content == ""
+    assert_eventually(fn -> Documents.get("/").content == "root body" end)
+    assert Documents.get("/n").content == ""
+    assert Documents.get("/alpha").content == ""
   end
 
   test "namespace owner edits own namespace and descendants but not root", %{conn: conn} do
@@ -145,12 +145,12 @@ defmodule UnfinalWeb.EditorLiveTest do
     render_hook(root, "save", %{"content" => "blocked"})
     render_hook(other, "save", %{"content" => "blocked"})
 
-    assert_eventually(fn -> ContentStore.get("/alpha").content == "home" end)
-    assert_eventually(fn -> ContentStore.get("/alpha/page").content == "child" end)
-    assert ContentStore.get("/").content == ""
-    assert ContentStore.get("/beta").content == ""
-    assert ContentStore.get("/n/alpha").content == ""
-    assert ContentStore.get("/n/alpha/page").content == ""
+    assert_eventually(fn -> Documents.get("/alpha").content == "home" end)
+    assert_eventually(fn -> Documents.get("/alpha/page").content == "child" end)
+    assert Documents.get("/").content == ""
+    assert Documents.get("/beta").content == ""
+    assert Documents.get("/n/alpha").content == ""
+    assert Documents.get("/n/alpha/page").content == ""
   end
 
   test "unclaimed logged-in user sees claim link instead of blank page links", %{conn: conn} do
@@ -277,13 +277,13 @@ defmodule UnfinalWeb.EditorLiveTest do
     {:ok, root_view, _html} = live(conn, "/n/alpha")
     root_view |> form("form[phx-change=save]", %{content: "root indexed"}) |> render_change()
 
-    assert_eventually(fn -> ContentStore.get("/alpha").content == "root indexed" end)
+    assert_eventually(fn -> Documents.get("/alpha").content == "root indexed" end)
     assert [%{path: "/"}] = Unfinal.PageIndex.list("alpha")
 
     {:ok, view, _html} = live(conn, "/n/alpha/notes")
     view |> form("form[phx-change=save]", %{content: "indexed"}) |> render_change()
 
-    assert_eventually(fn -> ContentStore.get("/alpha/notes").content == "indexed" end)
+    assert_eventually(fn -> Documents.get("/alpha/notes").content == "indexed" end)
     assert [%{path: "/notes"}, %{path: "/"}] = Unfinal.PageIndex.list("alpha")
   end
 
@@ -326,7 +326,7 @@ defmodule UnfinalWeb.EditorLiveTest do
              UnfinalWeb.EditorLive.handle_event("save", %{"content" => "saved remotely"}, socket)
 
     assert unchanged_socket == socket
-    assert_eventually(fn -> ContentStore.get("/notes").content == "saved remotely" end)
+    assert_eventually(fn -> Documents.get("/notes").content == "saved remotely" end)
   end
 
   test "writer can queue content matching stale rendered content after another queued save" do
@@ -351,7 +351,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert reverted_socket.assigns.content == "initial"
     assert reverted_socket.assigns.saved_content == "initial"
     assert reverted_socket.assigns.revision == 0
-    assert_eventually(fn -> ContentStore.get("/notes").content == "initial" end)
+    assert_eventually(fn -> Documents.get("/notes").content == "initial" end)
   end
 
   test "readonly content update uses PubSub payload without reading object store" do
@@ -415,8 +415,8 @@ defmodule UnfinalWeb.EditorLiveTest do
   defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 
   defp save_document(path, content) do
-    base = ContentStore.get(path)
-    assert {:ok, _document} = ContentStore.put(path, content, base.etag, base.revision)
+    base = Documents.get(path)
+    assert {:ok, _document} = Documents.put(path, content, base.etag, base.revision)
   end
 
   defp logged_in(conn, id, email) do

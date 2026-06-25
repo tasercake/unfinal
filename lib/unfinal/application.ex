@@ -15,6 +15,7 @@ defmodule Unfinal.Application do
       {Phoenix.PubSub, name: Unfinal.PubSub},
       {Registry, keys: :unique, name: Unfinal.DocumentRegistry},
       {DynamicSupervisor, strategy: :one_for_one, name: Unfinal.DocumentSupervisor},
+      {Task.Supervisor, name: Unfinal.DocumentTaskSupervisor},
       Unfinal.NamespaceStore,
       # Start to serve requests, typically the last entry
       UnfinalWeb.Endpoint

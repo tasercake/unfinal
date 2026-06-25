@@ -1,8 +1,8 @@
 defmodule UnfinalWeb.EditorLive do
   use UnfinalWeb, :live_view
 
-  alias Unfinal.ContentStore
   alias Unfinal.DocumentPath
+  alias Unfinal.Documents
   alias Unfinal.NamespaceStore
   alias Unfinal.PageIndex
   alias Unfinal.Writers
@@ -25,9 +25,9 @@ defmodule UnfinalWeb.EditorLive do
     writer? = writer?(segments, session, claimed_namespace)
 
     if connected?(socket) and not writer?,
-      do: Phoenix.PubSub.subscribe(Unfinal.PubSub, ContentStore.topic(storage_path))
+      do: Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic(storage_path))
 
-    document = ContentStore.get(storage_path)
+    document = Documents.get(storage_path)
 
     socket =
       assign(socket,
@@ -62,7 +62,7 @@ defmodule UnfinalWeb.EditorLive do
           }
         } = socket
       ) do
-    :ok = ContentStore.queue_put(storage_path, content)
+    :ok = Documents.queue_put(storage_path, content)
     maybe_index_page(Map.get(socket.assigns, :claimed_namespace), storage_path)
     {:noreply, socket}
   end
@@ -251,7 +251,7 @@ defmodule UnfinalWeb.EditorLive do
               </.form>
 
               <a
-                :if={@path != @root_page_path and not (@path in @page_paths)}
+                :if={@path != @root_page_path and @path not in @page_paths}
                 class="block rounded-lg bg-white/70 px-3 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                 href={@path}
               >

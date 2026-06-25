@@ -6,6 +6,8 @@ defmodule Unfinal.BlockingObjectStore do
 
   @impl true
   def put("/slow", content, base_etag, base_revision) do
+    waiter = self()
+    Agent.update(__MODULE__, fn state -> %{state | waiter: waiter} end)
     send(parent(), :slow_put_started)
 
     receive do
@@ -14,6 +16,7 @@ defmodule Unfinal.BlockingObjectStore do
       1_000 -> :ok
     end
 
+    Agent.update(__MODULE__, fn state -> %{state | waiter: nil} end)
     Unfinal.FakeObjectStore.put("/slow", content, base_etag, base_revision)
   end
 
@@ -33,7 +36,15 @@ defmodule Unfinal.BlockingObjectStore do
   @impl true
   def clear, do: Unfinal.FakeObjectStore.clear()
 
-  def set_parent(pid) when is_pid(pid), do: Agent.update(__MODULE__, fn _ -> pid end)
+  def set_parent(pid) when is_pid(pid),
+    do: Agent.update(__MODULE__, fn state -> %{state | parent: pid} end)
+
+  def release_slow_put do
+    case Agent.get(__MODULE__, & &1.waiter) do
+      nil -> :ok
+      pid -> send(pid, :release_slow_put)
+    end
+  end
 
   def ensure_started do
     case Process.whereis(__MODULE__) do
@@ -42,7 +53,8 @@ defmodule Unfinal.BlockingObjectStore do
     end
   end
 
-  def start_link(_opts), do: Agent.start(fn -> self() end, name: __MODULE__)
+  def start_link(_opts),
+    do: Agent.start(fn -> %{parent: self(), waiter: nil} end, name: __MODULE__)
 
-  defp parent, do: Agent.get(__MODULE__, & &1)
+  defp parent, do: Agent.get(__MODULE__, & &1.parent)
 end

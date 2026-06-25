@@ -1,15 +1,15 @@
 defmodule Unfinal.PageIndexTest do
   use ExUnit.Case, async: false
 
-  alias Unfinal.ContentStore
+  alias Unfinal.Documents
   alias Unfinal.PageIndex
 
   setup do
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
-    ContentStore.clear()
+    Documents.clear()
 
     on_exit(fn ->
-      ContentStore.clear()
+      Documents.clear()
     end)
 
     :ok
