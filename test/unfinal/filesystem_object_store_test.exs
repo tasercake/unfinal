@@ -91,4 +91,23 @@ defmodule Unfinal.FilesystemObjectStoreTest do
 
     assert microseconds < 100_000
   end
+
+  test "delays public document operations" do
+    Application.put_env(:unfinal, :filesystem_object_store, write_delay_ms: 20)
+
+    assert_delayed(fn -> FilesystemObjectStore.get("/slow") end)
+  end
+
+  test "delays public raw object operations" do
+    Application.put_env(:unfinal, :filesystem_object_store, write_delay_ms: 20)
+
+    assert_delayed(fn -> FilesystemObjectStore.put_object("raw/key.txt", "body") end)
+    assert_delayed(fn -> FilesystemObjectStore.get_object("raw/key.txt") end)
+  end
+
+  defp assert_delayed(operation) do
+    {microseconds, _result} = :timer.tc(operation)
+
+    assert microseconds >= 20_000
+  end
 end
