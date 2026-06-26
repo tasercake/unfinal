@@ -10,7 +10,28 @@ defmodule Unfinal.FilesystemObjectStore do
   @default_write_delay_ms 200
 
   @impl true
-  def get(path) do
+  def get(path), do: delayed(fn -> do_get(path) end)
+
+  @impl true
+  def put(path, content, base_etag, base_revision),
+    do: delayed(fn -> do_put(path, content, base_etag, base_revision) end)
+
+  @spec get_object(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def get_object(key) when is_binary(key), do: delayed(fn -> do_get_object(key) end)
+
+  @spec put_object(String.t(), String.t()) :: :ok | {:error, term()}
+  def put_object(key, content) when is_binary(key) and is_binary(content),
+    do: delayed(fn -> do_put_object(key, content) end)
+
+  @impl true
+  def delete(path, base_etag, base_revision),
+    do: delayed(fn -> do_delete(path, base_etag, base_revision) end)
+
+  @impl true
+  def clear, do: delayed(fn -> do_clear() end)
+
+  @spec do_get(String.t()) :: {:ok, Document.t()} | {:error, term()}
+  defp do_get(path) do
     path
     |> envelope_path()
     |> File.read()
@@ -21,9 +42,10 @@ defmodule Unfinal.FilesystemObjectStore do
     end
   end
 
-  @impl true
-  def put(path, content, base_etag, base_revision) do
-    with {:ok, current} <- get(path) do
+  @spec do_put(String.t(), String.t(), String.t() | nil, non_neg_integer()) ::
+          {:ok, Document.t()} | {:stale, Document.t()} | {:error, term()}
+  defp do_put(path, content, base_etag, base_revision) do
+    with {:ok, current} <- do_get(path) do
       if current.etag == base_etag and current.revision == base_revision do
         write_document(path, content, base_revision + 1)
       else
@@ -32,8 +54,8 @@ defmodule Unfinal.FilesystemObjectStore do
     end
   end
 
-  @spec get_object(String.t()) :: {:ok, String.t()} | {:error, term()}
-  def get_object(key) when is_binary(key) do
+  @spec do_get_object(String.t()) :: {:ok, String.t()} | {:error, term()}
+  defp do_get_object(key) do
     case File.read(Path.join(data_dir(), key)) do
       {:ok, content} -> {:ok, content}
       {:error, :enoent} -> {:error, :not_found}
@@ -41,8 +63,8 @@ defmodule Unfinal.FilesystemObjectStore do
     end
   end
 
-  @spec put_object(String.t(), String.t()) :: :ok | {:error, term()}
-  def put_object(key, content) when is_binary(key) and is_binary(content) do
+  @spec do_put_object(String.t(), String.t()) :: :ok | {:error, term()}
+  defp do_put_object(key, content) do
     path = Path.join(data_dir(), key)
 
     with :ok <- File.mkdir_p(Path.dirname(path)) do
@@ -50,9 +72,10 @@ defmodule Unfinal.FilesystemObjectStore do
     end
   end
 
-  @impl true
-  def delete(path, base_etag, base_revision) do
-    with {:ok, current} <- get(path) do
+  @spec do_delete(String.t(), String.t() | nil, non_neg_integer()) ::
+          {:ok, Document.t()} | {:stale, Document.t()} | {:error, term()}
+  defp do_delete(path, base_etag, base_revision) do
+    with {:ok, current} <- do_get(path) do
       if current.etag == base_etag and current.revision == base_revision do
         case File.rm(envelope_path(path)) do
           :ok -> {:ok, ContentStore.missing(path)}
@@ -65,8 +88,8 @@ defmodule Unfinal.FilesystemObjectStore do
     end
   end
 
-  @impl true
-  def clear do
+  @spec do_clear() :: :ok
+  defp do_clear do
     data_dir()
     |> Path.join("documents")
     |> File.rm_rf!()
@@ -77,8 +100,6 @@ defmodule Unfinal.FilesystemObjectStore do
   @spec write_document(String.t(), String.t(), pos_integer()) ::
           {:ok, Document.t()} | {:error, term()}
   defp write_document(path, content, revision) do
-    Process.sleep(write_delay_ms())
-
     doc = %Document{
       path: path,
       content: content,
@@ -160,6 +181,15 @@ defmodule Unfinal.FilesystemObjectStore do
       nil -> System.get_env("UNFINAL_DATA_DIR", @default_data_dir)
       value when is_binary(value) -> value
     end
+  end
+
+  # Keep this artificial delay at the public adapter boundary.
+  # It is deliberate and important: local dev uses this filesystem store while prod uses S3/R2,
+  # so the delay helps catch production-like latency/blocking bugs. Do not remove casually.
+  @spec delayed((-> result)) :: result when result: term()
+  defp delayed(operation) do
+    Process.sleep(write_delay_ms())
+    operation.()
   end
 
   @spec write_delay_ms() :: non_neg_integer()
