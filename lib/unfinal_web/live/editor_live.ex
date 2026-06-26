@@ -63,7 +63,7 @@ defmodule UnfinalWeb.EditorLive do
         } = socket
       ) do
     :ok = Documents.queue_put(storage_path, content)
-    maybe_index_page(Map.get(socket.assigns, :claimed_namespace), storage_path)
+    index_page(Map.get(socket.assigns, :claimed_namespace), storage_path)
     {:noreply, socket}
   end
 
@@ -181,7 +181,7 @@ defmodule UnfinalWeb.EditorLive do
   defp display_page_path("/n" <> path), do: path
   defp display_page_path(path), do: path
 
-  defp maybe_index_page(namespace, "/" <> path) when is_binary(namespace) do
+  defp index_page(namespace, "/" <> path) when is_binary(namespace) do
     case String.split(path, "/", parts: 2) do
       [^namespace] ->
         PageIndex.upsert(namespace, "/", DateTime.utc_now())
@@ -194,7 +194,7 @@ defmodule UnfinalWeb.EditorLive do
     end
   end
 
-  defp maybe_index_page(_namespace, _storage_path), do: :ok
+  defp index_page(_namespace, _storage_path), do: :ok
 
   @impl true
   def render(assigns) do
