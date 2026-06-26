@@ -29,7 +29,7 @@ defmodule Unfinal.ContentStoreTest do
     assert Unfinal.FakeObjectStore.get("/notes") == {:ok, updated}
   end
 
-  test "adapter deletes blank-equivalent existing documents when called by document server" do
+  test "adapter delete removes existing documents when called explicitly" do
     assert {:ok, created} = Unfinal.FakeObjectStore.put("/blank-existing", "saved", nil, 0)
     assert Unfinal.FakeObjectStore.stored?("/blank-existing")
 

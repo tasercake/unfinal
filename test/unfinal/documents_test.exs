@@ -86,6 +86,25 @@ defmodule Unfinal.DocumentsTest do
     assert Documents.get("/queued").content == "two"
   end
 
+  test "queue_put persists empty and whitespace content instead of deleting" do
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/blank"))
+
+    assert :ok = Documents.queue_put("/blank", "existing")
+    assert_receive {:content_updated, "/blank", %{content: "existing", revision: 1}}, 300
+
+    assert :ok = Documents.queue_put("/blank", "   \n\t")
+    assert_receive {:content_updated, "/blank", %{content: "   \n\t", revision: 2}}, 300
+    assert {:ok, %ContentStore.Document{content: "   \n\t", revision: 2, etag: etag}} =
+             Unfinal.FakeObjectStore.get("/blank")
+    assert is_binary(etag)
+
+    assert :ok = Documents.queue_put("/blank", "")
+    assert_receive {:content_updated, "/blank", %{content: "", revision: 3}}, 300
+    assert {:ok, %ContentStore.Document{content: "", revision: 3, etag: etag}} =
+             Unfinal.FakeObjectStore.get("/blank")
+    assert is_binary(etag)
+  end
+
   test "persistence failure keeps dirty content and retries latest content" do
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FlakyObjectStore)
     Unfinal.FlakyObjectStore.clear()
