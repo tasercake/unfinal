@@ -173,15 +173,8 @@ defmodule Unfinal.DocumentServer do
   end
 
   defp write_content(path, content, base_etag, base_revision) do
-    if blank?(content) do
-      # Preserve current blank-means-delete behavior.
-      ContentStore.adapter().delete(path, base_etag, base_revision)
-    else
-      ContentStore.adapter().put(path, content, base_etag, base_revision)
-    end
+    ContentStore.adapter().put(path, content, base_etag, base_revision)
   end
-
-  defp blank?(content), do: String.trim(content) == ""
 
   defp merge_durable_metadata(%Document{} = visible_doc, %Document{} = durable_doc) do
     %Document{
