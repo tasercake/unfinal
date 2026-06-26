@@ -63,20 +63,6 @@ defmodule Unfinal.DocumentServer do
   @impl true
   def handle_call(:get, _from, state), do: {:reply, state.document, state}
 
-  def handle_call({:put, content, base_etag, base_revision}, _from, state) do
-    case write_content(state.path, content, base_etag, base_revision) do
-      {:ok, doc} ->
-        broadcast(state.path, doc)
-        {:reply, {:ok, doc}, %{state | document: doc}}
-
-      {:stale, doc} ->
-        {:reply, {:stale, doc}, %{state | document: merge_durable_metadata(state.document, doc)}}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
   def handle_call({:queue_put, content}, _from, state) do
     version = state.version + 1
 

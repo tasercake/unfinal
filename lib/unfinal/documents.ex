@@ -22,15 +22,6 @@ defmodule Unfinal.Documents do
   @spec get(path()) :: Document.t()
   def get(path), do: path |> ContentStore.normalize_path() |> server_call(:get)
 
-  @spec put(path(), content(), String.t() | nil, non_neg_integer()) :: ContentStore.put_result()
-  def put(path, content, base_etag, base_revision)
-      when is_binary(content) and (is_binary(base_etag) or is_nil(base_etag)) and
-             is_integer(base_revision) and base_revision >= 0 do
-    path
-    |> ContentStore.normalize_path()
-    |> server_call({:put, content, base_etag, base_revision})
-  end
-
   @spec queue_put(path(), content()) :: :ok
   def queue_put(path, content) when is_binary(content) do
     path |> ContentStore.normalize_path() |> server_call({:queue_put, content})

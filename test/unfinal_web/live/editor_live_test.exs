@@ -415,8 +415,7 @@ defmodule UnfinalWeb.EditorLiveTest do
   defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 
   defp save_document(path, content) do
-    base = Documents.get(path)
-    assert {:ok, _document} = Documents.put(path, content, base.etag, base.revision)
+    assert {:ok, _document} = Unfinal.FakeObjectStore.put(path, content, nil, 0)
   end
 
   defp logged_in(conn, id, email) do
