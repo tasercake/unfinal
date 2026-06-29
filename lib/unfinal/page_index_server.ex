@@ -32,6 +32,7 @@ defmodule Unfinal.PageIndexServer do
        flush_timer: nil,
        flush_ref: nil,
        load_ref: task.ref,
+       load_retry_timer: nil,
        retry_ms: @initial_retry_ms,
        change_id: 0,
        flushing_change_id: nil
@@ -62,11 +63,16 @@ defmodule Unfinal.PageIndexServer do
     state =
       loaded_entries
       |> Enum.reduce(state, fn entry, acc -> put_entry_if_absent(acc, entry) end)
-      |> Map.put(:loaded?, true)
-      |> Map.put(:load_ref, nil)
+      |> Map.merge(%{loaded?: true, load_ref: nil, retry_ms: @initial_retry_ms})
 
     broadcast(state)
     {:noreply, state}
+  end
+
+  def handle_info({ref, {:error, reason}}, %{load_ref: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    Logger.warning("page index load failed for #{state.namespace}: #{inspect(reason)}")
+    {:noreply, state |> Map.put(:load_ref, nil) |> retry_load_later()}
   end
 
   def handle_info({ref, result}, %{flush_ref: ref} = state) do
@@ -78,7 +84,7 @@ defmodule Unfinal.PageIndexServer do
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{load_ref: ref} = state) do
     Logger.warning("page index load task crashed for #{state.namespace}: #{inspect(reason)}")
-    {:noreply, %{state | loaded?: true, load_ref: nil}}
+    {:noreply, state |> Map.put(:load_ref, nil) |> retry_load_later()}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{flush_ref: ref} = state) do
@@ -88,6 +94,15 @@ defmodule Unfinal.PageIndexServer do
 
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:noreply, state}
 
+  def handle_info(:load, state) do
+    task =
+      Task.Supervisor.async_nolink(Unfinal.PageIndexTaskSupervisor, fn ->
+        load(state.namespace)
+      end)
+
+    {:noreply, %{state | load_ref: task.ref, load_retry_timer: nil}}
+  end
+
   def handle_info(:flush, state) do
     state = %{state | flush_timer: nil}
 
@@ -96,6 +111,9 @@ defmodule Unfinal.PageIndexServer do
         {:noreply, state}
 
       not is_nil(state.flush_ref) ->
+        {:noreply, schedule_flush(state, ContentStore.flush_interval_ms())}
+
+      not state.loaded? ->
         {:noreply, schedule_flush(state, ContentStore.flush_interval_ms())}
 
       true ->
@@ -134,6 +152,18 @@ defmodule Unfinal.PageIndexServer do
     %{state | dirty?: true, retry_ms: retry_ms} |> schedule_flush(state.retry_ms)
   end
 
+  defp retry_load_later(%{load_retry_timer: nil} = state) do
+    retry_ms = min(state.retry_ms * 2, @max_retry_ms)
+
+    %{
+      state
+      | retry_ms: retry_ms,
+        load_retry_timer: Process.send_after(self(), :load, state.retry_ms)
+    }
+  end
+
+  defp retry_load_later(state), do: state
+
   defp schedule_flush(%{flush_timer: nil} = state, delay_ms) do
     %{state | flush_timer: Process.send_after(self(), :flush, delay_ms)}
   end
@@ -167,15 +197,13 @@ defmodule Unfinal.PageIndexServer do
   end
 
   defp load(namespace) do
-    entries =
-      namespace
-      |> PageIndex.key()
-      |> ObjectIndex.get()
-      |> case do
-        {:ok, content} -> PageIndex.parse(content)
-        {:error, _reason} -> []
-      end
-
-    {:loaded, entries}
+    namespace
+    |> PageIndex.key()
+    |> ObjectIndex.get()
+    |> case do
+      {:ok, content} -> {:loaded, PageIndex.parse(content)}
+      {:error, :not_found} -> {:loaded, []}
+      {:error, reason} -> {:error, reason}
+    end
   end
 end

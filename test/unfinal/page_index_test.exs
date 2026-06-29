@@ -73,6 +73,29 @@ defmodule Unfinal.PageIndexTest do
     Unfinal.BlockingIndexObjectStore.release()
   end
 
+  test "transient startup load failure retries without overwriting pending upserts" do
+    Unfinal.FlakyIndexLoadObjectStore.ensure_started()
+    Unfinal.FlakyIndexLoadObjectStore.fail_get_objects(1)
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FlakyIndexLoadObjectStore)
+
+    assert :ok =
+             Unfinal.FakeObjectStore.put_object(
+               "indexes/namespaces/alpha.ndjson",
+               Jason.encode!(%{path: "/pending", updated_at: "2026-06-25T00:00:00Z"}) <>
+                 "\n" <>
+                 Jason.encode!(%{path: "/loaded", updated_at: "2026-06-24T00:00:00Z"}) <> "\n"
+             )
+
+    assert :ok = PageIndex.upsert("alpha", "/pending", ~U[2026-06-26 00:00:00Z])
+
+    assert eventually(fn ->
+             PageIndex.list("alpha") == [
+               %{path: "/pending", updated_at: "2026-06-26T00:00:00Z"},
+               %{path: "/loaded", updated_at: "2026-06-24T00:00:00Z"}
+             ]
+           end)
+  end
+
   test "startup load is async and pending upserts are not overwritten by durable state" do
     Unfinal.BlockingIndexObjectStore.ensure_started()
     Unfinal.BlockingIndexObjectStore.reset()
