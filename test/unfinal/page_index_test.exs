@@ -1,6 +1,8 @@
 defmodule Unfinal.PageIndexTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias Unfinal.Documents
   alias Unfinal.PageIndex
 
@@ -86,14 +88,19 @@ defmodule Unfinal.PageIndexTest do
                  Jason.encode!(%{path: "/loaded", updated_at: "2026-06-24T00:00:00Z"}) <> "\n"
              )
 
-    assert :ok = PageIndex.upsert("alpha", "/pending", ~U[2026-06-26 00:00:00Z])
+    log =
+      capture_log(fn ->
+        assert :ok = PageIndex.upsert("alpha", "/pending", ~U[2026-06-26 00:00:00Z])
 
-    assert eventually(fn ->
-             PageIndex.list("alpha") == [
-               %{path: "/pending", updated_at: "2026-06-26T00:00:00Z"},
-               %{path: "/loaded", updated_at: "2026-06-24T00:00:00Z"}
-             ]
-           end)
+        assert eventually(fn ->
+                 PageIndex.list("alpha") == [
+                   %{path: "/pending", updated_at: "2026-06-26T00:00:00Z"},
+                   %{path: "/loaded", updated_at: "2026-06-24T00:00:00Z"}
+                 ]
+               end)
+      end)
+
+    assert log =~ "page index load failed for alpha: :temporary"
   end
 
   test "startup load is async and pending upserts are not overwritten by durable state" do

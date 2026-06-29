@@ -115,10 +115,15 @@ defmodule Unfinal.DocumentsTest do
     Unfinal.FlakyObjectStore.fail_next_put()
     Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/flaky"))
 
-    assert :ok = Documents.queue_put("/flaky", "eventual")
-    assert Documents.get("/flaky").content == "eventual"
+    log =
+      capture_log(fn ->
+        assert :ok = Documents.queue_put("/flaky", "eventual")
+        assert Documents.get("/flaky").content == "eventual"
 
-    assert_receive {:content_updated, "/flaky", %{content: "eventual"}}, 500
+        assert_receive {:content_updated, "/flaky", %{content: "eventual"}}, 500
+      end)
+
+    assert log =~ "content flush failed for /flaky: :temporary"
     assert Documents.get("/flaky").content == "eventual"
   end
 

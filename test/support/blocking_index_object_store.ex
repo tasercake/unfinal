@@ -72,9 +72,16 @@ defmodule Unfinal.BlockingIndexObjectStore do
       receive do
         :release_blocking_index_object_store -> :ok
       after
-        1_000 -> :ok
+        1_000 -> remove_waiter(waiter)
       end
     end
+  end
+
+  defp remove_waiter(waiter) do
+    Agent.update(
+      __MODULE__,
+      &Map.update!(&1, :waiters, fn waiters -> List.delete(waiters, waiter) end)
+    )
   end
 
   defp parent, do: Agent.get(__MODULE__, & &1.parent)
