@@ -134,7 +134,7 @@ litestream_validate() {
   # something fresh to replicate, then wait for the replication cycle.
   log "Litestream: write probe row to trigger WAL activity"
   sqlite3 "${UNFINAL_DATABASE_PATH}" \
-    "INSERT OR REPLACE INTO schema_migrations (version, inserted_at) VALUES ('litestream_probe', datetime('now'));"
+    "CREATE TABLE IF NOT EXISTS _litestream_probe (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT (datetime('now'))); INSERT INTO _litestream_probe DEFAULT VALUES;"
 
   log "Litestream: waiting 5 s for replication cycle"
   sleep 5
