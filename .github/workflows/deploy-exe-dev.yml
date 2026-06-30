@@ -20,7 +20,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.UNFINAL_DEPLOY_SSH_PRIVATE_KEY }}
 
-      - name: Run remote deploy script
+      - name: Run remote deploy script with Litestream restore validation
         run: |
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 22 "${{ secrets.EXE_DEV_HOST }}" '
             set -euo pipefail

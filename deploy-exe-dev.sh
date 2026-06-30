@@ -74,6 +74,81 @@ load_env_file() {
   set +a
 }
 
+install_tools_and_litestream() {
+  local missing_tools=()
+  command -v curl    >/dev/null 2>&1 || missing_tools+=("curl")
+  command -v sqlite3 >/dev/null 2>&1 || missing_tools+=("sqlite3")
+  dpkg --version     >/dev/null 2>&1 || missing_tools+=("dpkg")
+  [[ -f /etc/ssl/certs/ca-certificates.crt ]] || missing_tools+=("ca-certificates")
+
+  if [[ ${#missing_tools[@]} -gt 0 ]]; then
+    log "install missing tools: ${missing_tools[*]}"
+    sudo apt-get update -qq
+    sudo apt-get install -y ca-certificates curl sqlite3 dpkg
+  fi
+
+  local litestream_installed=1
+  if command -v litestream >/dev/null 2>&1; then
+    if litestream version 2>/dev/null | grep -qF "${LITESTREAM_VERSION}"; then
+      litestream_installed=0
+    fi
+  fi
+
+  if [[ "${litestream_installed}" -eq 0 ]]; then
+    log "Litestream ${LITESTREAM_VERSION} already installed"
+    return 0
+  fi
+
+  log "install Litestream ${LITESTREAM_VERSION}"
+
+  local deb_arch
+  deb_arch=$(dpkg --print-architecture)
+
+  local asset_arch
+  case "${deb_arch}" in
+    amd64) asset_arch="x86_64" ;;
+    arm64) asset_arch="arm64" ;;
+    *)
+      printf 'Unsupported architecture for Litestream: %s\n' "${deb_arch}" >&2
+      exit 1
+      ;;
+  esac
+
+  local deb_name="litestream-${LITESTREAM_VERSION}-linux-${asset_arch}.deb"
+  local deb_url="https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/${deb_name}"
+  local tmpdir
+  tmpdir=$(mktemp -d)
+
+  curl -fsSL -o "${tmpdir}/${deb_name}" "${deb_url}"
+  sudo dpkg -i "${tmpdir}/${deb_name}"
+  rm -rf "${tmpdir}"
+
+  log "Litestream ${LITESTREAM_VERSION} installed"
+}
+
+litestream_validate() {
+  log "Litestream: sync local DB to replica"
+  litestream sync -timeout 60 "${UNFINAL_DATABASE_PATH}"
+
+  local restore_dir
+  restore_dir=$(mktemp -d)
+
+  log "Litestream: restore replica to temp path"
+  litestream restore -config "${LITESTREAM_CONFIG}" -o "${restore_dir}/restore.sqlite3" "${UNFINAL_DATABASE_PATH}"
+
+  log "PRAGMA integrity_check on restored DB"
+  local integrity
+  integrity=$(sqlite3 "${restore_dir}/restore.sqlite3" 'PRAGMA integrity_check;')
+  rm -rf "${restore_dir}"
+
+  if [[ "${integrity}" != "ok" ]]; then
+    printf 'Restored DB integrity check failed: %s\n' "${integrity}" >&2
+    exit 1
+  fi
+
+  log "Litestream restore + integrity check passed"
+}
+
 SERVICE_NAME=${SERVICE_NAME:-unfinal}
 APP_DIR=${APP_DIR:-$(pwd -P)}
 PORT=${PORT:-8000}
@@ -83,11 +158,26 @@ ENV_DIR=${ENV_DIR:-/etc/${SERVICE_NAME}}
 ENV_FILE=${ENV_FILE:-${ENV_DIR}/${SERVICE_NAME}.env}
 SERVICE_FILE=${SERVICE_FILE:-/etc/systemd/system/${SERVICE_NAME}.service}
 
+# Phase 2 Litestream variables
+UNFINAL_DATABASE_PATH=${UNFINAL_DATABASE_PATH:-${UNFINAL_DATA_DIR}/unfinal.sqlite3}
+LITESTREAM_VERSION=${LITESTREAM_VERSION:-0.8.11}
+LITESTREAM_CONFIG=${LITESTREAM_CONFIG:-/etc/litestream/unfinal.yml}
+LITESTREAM_SERVICE_NAME=${LITESTREAM_SERVICE_NAME:-unfinal-litestream}
+LITESTREAM_SERVICE_FILE=${LITESTREAM_SERVICE_FILE:-/etc/systemd/system/${LITESTREAM_SERVICE_NAME}.service}
+UNFINAL_LITESTREAM_REPLICA_PATH=${UNFINAL_LITESTREAM_REPLICA_PATH:-litestream/unfinal.sqlite3}
+
 export PATH="/opt/elixir-1.16.3/bin:/usr/local/bin:${PATH}"
 export MIX_ENV=prod
 export PHX_SERVER=true
 export PORT
 export UNFINAL_DATA_DIR
+export UNFINAL_DATABASE_PATH
+export UNFINAL_LITESTREAM_REPLICA_PATH
+export UNFINAL_S3_ACCESS_KEY_ID
+export UNFINAL_S3_SECRET_ACCESS_KEY
+export UNFINAL_S3_BUCKET
+export UNFINAL_S3_ENDPOINT
+export UNFINAL_S3_REGION
 
 if [[ ! -f "${APP_DIR}/mix.exs" ]]; then
   printf 'APP_DIR must point to repo root with mix.exs: %s\n' "${APP_DIR}" >&2
@@ -115,7 +205,8 @@ append_env_if_missing "MIX_ENV" "prod"
 append_env_if_missing "PHX_SERVER" "true"
 append_env_if_missing "PORT" "${PORT}"
 append_env_if_missing "UNFINAL_DATA_DIR" "${UNFINAL_DATA_DIR}"
-append_env_if_missing "UNFINAL_DATABASE_PATH" "${UNFINAL_DATA_DIR}/unfinal.sqlite3"
+append_env_if_missing "UNFINAL_DATABASE_PATH" "${UNFINAL_DATABASE_PATH}"
+append_env_if_missing "UNFINAL_LITESTREAM_REPLICA_PATH" "${UNFINAL_LITESTREAM_REPLICA_PATH}"
 
 if ! sudo grep -Eq '^SECRET_KEY_BASE=' "${ENV_FILE}"; then
   if command -v openssl >/dev/null 2>&1; then
@@ -131,12 +222,6 @@ fi
 
 load_env_file
 
-sqlite_dir=$(dirname "${UNFINAL_DATABASE_PATH}")
-log "ensure SQLite dir ${sqlite_dir}"
-sudo install -d -m 0750 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${sqlite_dir}"
-
-check_generated_dirs_writable
-
 log "fetch deps"
 mix deps.get --only prod
 
@@ -146,8 +231,103 @@ mix compile
 log "build assets"
 mix assets.deploy
 
-log "run schema migrations"
+# ── Phase 2: persistent DB directory + deploy-time Ecto migrations ──────────
+
+sqlite_dir=$(dirname "${UNFINAL_DATABASE_PATH}")
+log "ensure SQLite dir ${sqlite_dir}"
+sudo install -d -m 0750 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${sqlite_dir}"
+
+check_generated_dirs_writable
+
+log "run Ecto migrations"
+mix ecto.create
 mix ecto.migrate
+
+if [[ ! -s "${UNFINAL_DATABASE_PATH}" ]]; then
+  printf 'SQLite DB file missing or empty after migrations: %s\n' "${UNFINAL_DATABASE_PATH}" >&2
+  exit 1
+fi
+
+# ── Phase 2: install Litestream + write config + start service ──────────────
+
+install_tools_and_litestream
+
+log "write Litestream config ${LITESTREAM_CONFIG}"
+sudo install -d -m 0755 -o root -g root "$(dirname "${LITESTREAM_CONFIG}")"
+
+tmp_litestream_config=$(mktemp)
+cat >"${tmp_litestream_config}" <<'EOF_LITESTREAM_CONFIG'
+dbs:
+  - path: ${UNFINAL_DATABASE_PATH}
+    replicas:
+      - type: s3
+        bucket: ${UNFINAL_S3_BUCKET}
+        path: ${UNFINAL_LITESTREAM_REPLICA_PATH}
+        endpoint: ${UNFINAL_S3_ENDPOINT}
+        region: ${UNFINAL_S3_REGION}
+        access-key-id: ${UNFINAL_S3_ACCESS_KEY_ID}
+        secret-access-key: ${UNFINAL_S3_SECRET_ACCESS_KEY}
+EOF_LITESTREAM_CONFIG
+
+sudo install -m 0644 -o root -g root "${tmp_litestream_config}" "${LITESTREAM_CONFIG}"
+rm -f "${tmp_litestream_config}"
+
+log "write Litestream systemd service ${LITESTREAM_SERVICE_FILE}"
+
+tmp_litestream_service=$(mktemp)
+cat >"${tmp_litestream_service}" <<EOF_LITESTREAM_SERVICE
+[Unit]
+Description=Unfinal Litestream SQLite backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=${ENV_FILE}
+ExecStart=/usr/bin/litestream replicate -config ${LITESTREAM_CONFIG}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF_LITESTREAM_SERVICE
+
+if ! sudo test -f "${LITESTREAM_SERVICE_FILE}" || ! sudo cmp -s "${tmp_litestream_service}" "${LITESTREAM_SERVICE_FILE}"; then
+  sudo install -m 0644 -o root -g root "${tmp_litestream_service}" "${LITESTREAM_SERVICE_FILE}"
+  log "updated ${LITESTREAM_SERVICE_FILE}"
+else
+  log "Litestream systemd service unchanged"
+fi
+rm -f "${tmp_litestream_service}"
+
+log "reload and start Litestream service"
+sudo systemctl daemon-reload
+sudo systemctl enable "${LITESTREAM_SERVICE_NAME}.service"
+
+if sudo systemctl restart "${LITESTREAM_SERVICE_NAME}.service"; then
+  sleep 3
+  if systemctl is-active --quiet "${LITESTREAM_SERVICE_NAME}.service"; then
+    log "Litestream service is active"
+  else
+    printf '\nLitestream service started but died. Status:\n' >&2
+    sudo systemctl --no-pager --full status "${LITESTREAM_SERVICE_NAME}.service" >&2 || true
+    printf '\nRecent logs:\n' >&2
+    sudo journalctl -u "${LITESTREAM_SERVICE_NAME}.service" -n 100 --no-pager >&2 || true
+    exit 1
+  fi
+else
+  printf '\nLitestream service restart failed. Status:\n' >&2
+  sudo systemctl --no-pager --full status "${LITESTREAM_SERVICE_NAME}.service" >&2 || true
+  printf '\nRecent logs:\n' >&2
+  sudo journalctl -u "${LITESTREAM_SERVICE_NAME}.service" -n 100 --no-pager >&2 || true
+  exit 1
+fi
+
+# ── Phase 2: replica write + restore + integrity validation ─────────────────
+
+litestream_validate
+
+# ── Phoenix app: write service + reload + restart ───────────────────────────
 
 log "reload and restart unfinal"
 log "write systemd service ${SERVICE_FILE}"
