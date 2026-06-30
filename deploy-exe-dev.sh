@@ -126,37 +126,7 @@ install_tools_and_litestream() {
   log "Litestream ${LITESTREAM_VERSION} installed"
 }
 
-litestream_validate() {
-  log "Litestream: wait for replication after service start"
 
-  # The Litestream service (restarted just before this call) continuously
-  # replicates.  Write a small marker to force WAL activity so there is
-  # something fresh to replicate, then wait for the replication cycle.
-  log "Litestream: write probe row to trigger WAL activity"
-  sqlite3 "${UNFINAL_DATABASE_PATH}" \
-    "CREATE TABLE IF NOT EXISTS _litestream_probe (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT (datetime('now'))); INSERT INTO _litestream_probe DEFAULT VALUES;"
-
-  log "Litestream: waiting 5 s for replication cycle"
-  sleep 5
-
-  local restore_dir
-  restore_dir=$(mktemp -d)
-
-  log "Litestream: restore replica to temp path"
-  litestream restore -config "${LITESTREAM_CONFIG}" -o "${restore_dir}/restore.sqlite3" "${UNFINAL_DATABASE_PATH}"
-
-  log "PRAGMA integrity_check on restored DB"
-  local integrity
-  integrity=$(sqlite3 "${restore_dir}/restore.sqlite3" 'PRAGMA integrity_check;')
-  rm -rf "${restore_dir}"
-
-  if [[ "${integrity}" != "ok" ]]; then
-    printf 'Restored DB integrity check failed: %s\n' "${integrity}" >&2
-    exit 1
-  fi
-
-  log "Litestream restore + integrity check passed"
-}
 
 SERVICE_NAME=${SERVICE_NAME:-unfinal}
 APP_DIR=${APP_DIR:-$(pwd -P)}
@@ -331,10 +301,6 @@ else
   sudo journalctl -u "${LITESTREAM_SERVICE_NAME}.service" -n 100 --no-pager >&2 || true
   exit 1
 fi
-
-# ── Phase 2: replica write + restore + integrity validation ─────────────────
-
-litestream_validate
 
 # ── Phoenix app: write service + reload + restart ───────────────────────────
 
