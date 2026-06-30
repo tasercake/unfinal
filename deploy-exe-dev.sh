@@ -127,8 +127,17 @@ install_tools_and_litestream() {
 }
 
 litestream_validate() {
-  log "Litestream: sync local DB to replica"
-  litestream sync -timeout 60 "${UNFINAL_DATABASE_PATH}"
+  log "Litestream: wait for replication after service start"
+
+  # The Litestream service (restarted just before this call) continuously
+  # replicates.  Write a small marker to force WAL activity so there is
+  # something fresh to replicate, then wait for the replication cycle.
+  log "Litestream: write probe row to trigger WAL activity"
+  sqlite3 "${UNFINAL_DATABASE_PATH}" \
+    "INSERT OR REPLACE INTO schema_migrations (version, inserted_at) VALUES ('litestream_probe', datetime('now'));"
+
+  log "Litestream: waiting 5 s for replication cycle"
+  sleep 5
 
   local restore_dir
   restore_dir=$(mktemp -d)
@@ -160,7 +169,7 @@ SERVICE_FILE=${SERVICE_FILE:-/etc/systemd/system/${SERVICE_NAME}.service}
 
 # Phase 2 Litestream variables
 UNFINAL_DATABASE_PATH=${UNFINAL_DATABASE_PATH:-${UNFINAL_DATA_DIR}/unfinal.sqlite3}
-LITESTREAM_VERSION=${LITESTREAM_VERSION:-0.8.11}
+LITESTREAM_VERSION=${LITESTREAM_VERSION:-0.5.12}
 LITESTREAM_CONFIG=${LITESTREAM_CONFIG:-/etc/litestream/unfinal.yml}
 LITESTREAM_SERVICE_NAME=${LITESTREAM_SERVICE_NAME:-unfinal-litestream}
 LITESTREAM_SERVICE_FILE=${LITESTREAM_SERVICE_FILE:-/etc/systemd/system/${LITESTREAM_SERVICE_NAME}.service}
