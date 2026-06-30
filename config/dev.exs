@@ -58,6 +58,8 @@ config :unfinal, dev_routes: true
 config :unfinal, :object_store_adapter, Unfinal.FilesystemObjectStore
 config :unfinal, :filesystem_object_store, write_delay_ms: 1000
 
+config :unfinal, Unfinal.Repo, database: Path.expand("../.data/unfinal-dev.sqlite3", __DIR__)
+
 # Do not include metadata nor timestamps in development logs
 config :logger, :console, format: "[$level] $message\n"
 

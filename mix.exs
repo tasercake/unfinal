@@ -52,6 +52,8 @@ defmodule Unfinal.MixProject do
       {:gettext, "~> 0.26"},
       {:jason, "~> 1.2"},
       {:assent, "~> 0.3.1"},
+      {:ecto_sql, "~> 3.14"},
+      {:ecto_sqlite3, "~> 0.24.1"},
       {:ssl_verify_fun, "~> 1.1"},
       {:certifi, "~> 2.15"},
       {:dns_cluster, "~> 0.1.1"},

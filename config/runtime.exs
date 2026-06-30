@@ -50,6 +50,13 @@ if config_env() == :prod do
 
   config :unfinal, :encryption_salt, encryption_salt
 
+  unfinal_data_dir = System.get_env("UNFINAL_DATA_DIR") || "./.data"
+
+  sqlite_path =
+    System.get_env("UNFINAL_DATABASE_PATH") || Path.join(unfinal_data_dir, "unfinal.sqlite3")
+
+  config :unfinal, Unfinal.Repo, database: sqlite_path
+
   host = "localhost"
   port = String.to_integer(System.get_env("PORT") || "4000")
 

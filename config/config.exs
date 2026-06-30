@@ -8,7 +8,14 @@
 import Config
 
 config :unfinal,
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  ecto_repos: [Unfinal.Repo]
+
+config :unfinal, Unfinal.Repo,
+  adapter: Ecto.Adapters.SQLite3,
+  pool_size: 1,
+  journal_mode: :wal,
+  busy_timeout: 5_000
 
 # Configures the endpoint
 config :unfinal, UnfinalWeb.Endpoint,

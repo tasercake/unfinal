@@ -18,3 +18,5 @@ config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
 config :unfinal, :object_store_adapter, Unfinal.FakeObjectStore
+
+config :unfinal, Unfinal.Repo, database: Path.expand("../tmp/unfinal-test.sqlite3", __DIR__)

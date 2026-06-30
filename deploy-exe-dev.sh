@@ -67,6 +67,13 @@ check_generated_dirs_writable() {
   check_generated_dir_permissions "${APP_DIR}/priv/static"
 }
 
+load_env_file() {
+  set -a
+  # shellcheck disable=SC1090
+  source <(sudo cat "${ENV_FILE}")
+  set +a
+}
+
 SERVICE_NAME=${SERVICE_NAME:-unfinal}
 APP_DIR=${APP_DIR:-$(pwd -P)}
 PORT=${PORT:-8000}
@@ -108,6 +115,7 @@ append_env_if_missing "MIX_ENV" "prod"
 append_env_if_missing "PHX_SERVER" "true"
 append_env_if_missing "PORT" "${PORT}"
 append_env_if_missing "UNFINAL_DATA_DIR" "${UNFINAL_DATA_DIR}"
+append_env_if_missing "UNFINAL_DATABASE_PATH" "${UNFINAL_DATA_DIR}/unfinal.sqlite3"
 
 if ! sudo grep -Eq '^SECRET_KEY_BASE=' "${ENV_FILE}"; then
   if command -v openssl >/dev/null 2>&1; then
@@ -121,6 +129,12 @@ else
   log "preserve existing SECRET_KEY_BASE in ${ENV_FILE}"
 fi
 
+load_env_file
+
+sqlite_dir=$(dirname "${UNFINAL_DATABASE_PATH}")
+log "ensure SQLite dir ${sqlite_dir}"
+sudo install -d -m 0750 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${sqlite_dir}"
+
 check_generated_dirs_writable
 
 log "fetch deps"
@@ -132,6 +146,10 @@ mix compile
 log "build assets"
 mix assets.deploy
 
+log "run schema migrations"
+mix ecto.migrate
+
+log "reload and restart unfinal"
 log "write systemd service ${SERVICE_FILE}"
 tmp_service=$(mktemp)
 cat >"${tmp_service}" <<EOF_SERVICE
