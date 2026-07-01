@@ -159,6 +159,20 @@ defmodule Unfinal.SqliteDocuments do
     end
   end
 
+  @doc """
+  Delete a document row by path. Returns `:ok` if deleted, `{:error, :not_found}` if absent.
+  """
+  @spec delete(String.t()) :: :ok | {:error, :not_found | term()}
+  def delete(path) when is_binary(path) do
+    sql = "DELETE FROM documents WHERE path = ?1"
+
+    case query(sql, [path]) do
+      {:ok, %{num_rows: 1}} -> :ok
+      {:ok, %{num_rows: 0}} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "Count all document rows."
   @spec count_documents() :: non_neg_integer()
   def count_documents do
