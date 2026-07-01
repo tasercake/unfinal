@@ -1,6 +1,8 @@
 defmodule Unfinal.NamespaceStoreTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias Unfinal.NamespaceStore
 
   setup do
@@ -8,9 +10,14 @@ defmodule Unfinal.NamespaceStoreTest do
     Unfinal.Documents.clear()
     NamespaceStore.clear()
 
+    # Clean SQLite tables before each test
+    Unfinal.Repo.query("DELETE FROM namespace_claims", [])
+
     on_exit(fn ->
       NamespaceStore.clear()
       Unfinal.Documents.clear()
+      # Restore default repo in case test overrode it
+      Application.put_env(:unfinal, :sqlite_shadow_repo, Unfinal.Repo)
     end)
 
     :ok
@@ -58,5 +65,49 @@ defmodule Unfinal.NamespaceStoreTest do
 
     assert NamespaceStore.claim("beta", %{"id" => "user-2", "email" => "one@example.com"}) ==
              {:error, :already_claimed}
+  end
+
+  test "claim writes old R2 namespace index primary and shadows SQLite claim" do
+    assert NamespaceStore.claim("alpha1", %{"email" => "one@example.com"}) == :ok
+
+    # R2 index is the primary store
+    assert Unfinal.ObjectIndex.get("indexes/namespaces.txt") ==
+             {:ok, "alpha1\tone@example.com\n"}
+
+    # SQLite namespace_claims row was shadow-inserted
+    {:ok, %{rows: rows}} =
+      Unfinal.Repo.query(
+        "SELECT namespace, email FROM namespace_claims WHERE namespace = ?1",
+        ["alpha1"]
+      )
+
+    assert [["alpha1", "one@example.com"]] = rows
+  end
+
+  test "sqlite namespace shadow failure does not fail successful R2 claim" do
+    Application.put_env(:unfinal, :sqlite_shadow_repo, Unfinal.FailingSQLiteShadowRepo)
+
+    log =
+      capture_log(fn ->
+        assert NamespaceStore.claim("alpha", %{"email" => "alpha@example.com"}) == :ok
+      end)
+
+    # R2/index object still exists
+    {:ok, content} = Unfinal.ObjectIndex.get("indexes/namespaces.txt")
+    assert content =~ "alpha"
+
+    assert log =~ "sqlite shadow namespace claim insert failed for alpha"
+  end
+
+  test "namespace reads still come from R2/index primary" do
+    # Seed SQLite namespace_claims directly without going through NamespaceStore
+    Unfinal.Repo.query(
+      "INSERT INTO namespace_claims(namespace, email, claimed_at) VALUES (?1, ?2, ?3)",
+      ["sqlite-only", "sqlite@example.com", DateTime.to_iso8601(~U[2025-01-01 00:00:00Z])]
+    )
+
+    # Do NOT seed R2 index — reads should still come from R2/index primary
+    assert NamespaceStore.namespace_for_email("sqlite@example.com") == nil
+    assert NamespaceStore.owner("sqlite-only") == nil
   end
 end

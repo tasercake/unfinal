@@ -11,8 +11,14 @@ defmodule Unfinal.DocumentsTest do
     Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
     Documents.clear()
 
+    # Clean SQLite tables before each test
+    Unfinal.Repo.query("DELETE FROM documents", [])
+    Unfinal.Repo.query("DELETE FROM namespace_claims", [])
+
     on_exit(fn ->
       Documents.clear()
+      # Restore default repo in case test overrode it
+      Application.put_env(:unfinal, :sqlite_shadow_repo, Unfinal.Repo)
     end)
   end
 
@@ -154,6 +160,90 @@ defmodule Unfinal.DocumentsTest do
 
     assert_receive {:content_updated, "/stale", %{content: "pending", revision: 2}}, 500
     assert Documents.get("/stale").content == "pending"
+  end
+
+  test "successful R2 flush shadow upserts SQLite document" do
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/alpha/notes"))
+
+    assert :ok = Documents.queue_put("/alpha/notes", "shadowed")
+
+    assert_receive {:content_updated, "/alpha/notes", %{content: "shadowed", revision: 1}}, 500
+
+    # R2 FakeObjectStore has the persisted content
+    assert_eventually(fn ->
+      {:ok, doc} = Unfinal.FakeObjectStore.get("/alpha/notes")
+      doc.content == "shadowed"
+    end)
+
+    # SQLite documents row was shadow-upserted
+    {:ok, %{rows: rows}} =
+      Unfinal.Repo.query(
+        "SELECT path, namespace, relative_path, content, revision FROM documents WHERE path = ?1",
+        ["/alpha/notes"]
+      )
+
+    assert [["/alpha/notes", "alpha", "/notes", "shadowed", 1]] = rows
+  end
+
+  test "sqlite shadow failure does not fail document save or R2 persistence" do
+    Application.put_env(:unfinal, :sqlite_shadow_repo, Unfinal.FailingSQLiteShadowRepo)
+
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/alpha/fail-shadow"))
+
+    log =
+      capture_log(fn ->
+        assert :ok = Documents.queue_put("/alpha/fail-shadow", "r2 wins")
+
+        assert_receive {:content_updated, "/alpha/fail-shadow", %{content: "r2 wins"}}, 500
+      end)
+
+    # R2 FakeObjectStore has the persisted content
+    assert_eventually(fn ->
+      {:ok, doc} = Unfinal.FakeObjectStore.get("/alpha/fail-shadow")
+      doc.content == "r2 wins"
+    end)
+
+    assert log =~ "sqlite shadow document upsert failed for /alpha/fail-shadow"
+  end
+
+  test "document shadow upsert does not clobber newer SQLite row" do
+    # Seed SQLite row with a much higher revision
+    seed_sql = """
+    INSERT INTO documents(path, namespace, relative_path, content, revision, updated_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+    """
+
+    Unfinal.Repo.query(seed_sql, [
+      "/alpha/stale",
+      "alpha",
+      "/stale",
+      "newer sqlite",
+      99,
+      DateTime.to_iso8601(~U[2025-01-01 00:00:00Z])
+    ])
+
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/alpha/stale"))
+
+    assert :ok = Documents.queue_put("/alpha/stale", "older r2 revision")
+
+    assert_receive {:content_updated, "/alpha/stale",
+                    %{content: "older r2 revision", revision: 1}},
+                   500
+
+    # R2 FakeObjectStore has the new content at revision 1
+    assert_eventually(fn ->
+      {:ok, doc} = Unfinal.FakeObjectStore.get("/alpha/stale")
+      doc.content == "older r2 revision" and doc.revision == 1
+    end)
+
+    # SQLite row remains unchanged at revision 99
+    {:ok, %{rows: rows}} =
+      Unfinal.Repo.query(
+        "SELECT content, revision FROM documents WHERE path = ?1",
+        ["/alpha/stale"]
+      )
+
+    assert [["newer sqlite", 99]] = rows
   end
 
   defp assert_eventually(fun, attempts \\ 30)

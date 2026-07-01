@@ -17,6 +17,10 @@ config :unfinal, Unfinal.Repo,
   journal_mode: :wal,
   busy_timeout: 5_000
 
+config :unfinal,
+  sqlite_shadow_repo: Unfinal.Repo,
+  sqlite_shadow_timeout_ms: 1_000
+
 # Configures the endpoint
 config :unfinal, UnfinalWeb.Endpoint,
   url: [host: "localhost"],

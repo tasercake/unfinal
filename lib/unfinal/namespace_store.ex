@@ -4,6 +4,9 @@ defmodule Unfinal.NamespaceStore do
   """
 
   use GenServer
+  require Logger
+
+  alias Unfinal.SQLiteShadow
 
   @type namespace :: String.t()
   @type email :: String.t()
@@ -58,6 +61,17 @@ defmodule Unfinal.NamespaceStore do
       true ->
         state = Map.put(state, namespace, %{email: email})
         :ok = write_all(state)
+
+        case SQLiteShadow.insert_namespace_claim(namespace, email, DateTime.utc_now()) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "sqlite shadow namespace claim insert failed for #{namespace}: #{inspect(reason)}"
+            )
+        end
+
         {:reply, :ok, state}
     end
   end
