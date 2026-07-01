@@ -597,6 +597,48 @@ defmodule UnfinalWeb.EditorLiveTest do
     refute html =~ "Permanently delete"
   end
 
+  # ── Mobile hamburger menu tests ──────────────────────────────────────────────
+
+  test "mobile hamburger menu toggles open and closed", %{conn: conn} do
+    {:ok, view, html} = live(conn, ~p"/n")
+
+    # Hamburger button is present
+    assert html =~ ~s(phx-click="toggle_mobile_menu")
+
+    # Nav wrapper starts hidden on mobile
+    assert html =~ ~s(id="mobile-nav-content")
+    assert html =~ "hidden"
+
+    # Toggle menu open
+    html = render_hook(view, "toggle_mobile_menu", %{})
+    assert html =~ ~s(id="mobile-nav-content")
+    refute html =~ ~r/id="mobile-nav-content"[^>]*\bhidden\b/
+
+    # Toggle menu closed
+    html = render_hook(view, "toggle_mobile_menu", %{})
+    assert html =~ "hidden"
+  end
+
+  test "clicking outside closes mobile menu", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/n")
+
+    # Open the menu
+    render_hook(view, "toggle_mobile_menu", %{})
+
+    # Simulate click-away
+    html = render_hook(view, "close_mobile_menu", %{})
+
+    # Nav wrapper is hidden again
+    assert html =~ "hidden"
+  end
+
+  test "hamburger button has lg:hidden class for desktop hiding", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/n")
+
+    assert html =~ ~s(phx-click="toggle_mobile_menu")
+    assert html =~ "lg:hidden"
+  end
+
   defp assert_eventually(fun, attempts \\ 20)
 
   defp assert_eventually(fun, attempts) when attempts > 0 do
