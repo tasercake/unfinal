@@ -302,6 +302,15 @@ else
   exit 1
 fi
 
+# ── Phase 4: R2→SQLite backfill ────────────────────────────────────────────
+
+log "ensure migration reports directory"
+sudo install -d -m 0750 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${UNFINAL_DATA_DIR}/migration-reports"
+
+log "backfill R2 into SQLite"
+report_path="${UNFINAL_DATA_DIR}/migration-reports/r2-to-sqlite-$(date -u +%Y%m%dT%H%M%SZ).json"
+mix unfinal.migrate_r2_to_sqlite --commit --report "${report_path}"
+
 # ── Phoenix app: write service + reload + restart ───────────────────────────
 
 log "reload and restart unfinal"
