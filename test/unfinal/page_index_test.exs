@@ -133,6 +133,20 @@ defmodule Unfinal.PageIndexTest do
            end)
   end
 
+  test "sqlite-only documents do not affect PageIndex list" do
+    # Seed SQLite documents table directly (simulating shadow writes)
+    now = DateTime.utc_now() |> DateTime.to_iso8601()
+
+    Unfinal.Repo.query(
+      "INSERT INTO documents(path, namespace, relative_path, content, revision, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+      ["/alpha/onlyinsqlite", "alpha", "/onlyinsqlite", "shadow content", 1, now]
+    )
+
+    # Do NOT write indexes/namespaces/alpha.ndjson to R2/index
+    # PageIndex.list reads from R2/index (PageIndexServer), not SQLite
+    assert PageIndex.list("alpha") == []
+  end
+
   defp eventually(fun, attempts \\ 50)
   defp eventually(_fun, 0), do: false
 
