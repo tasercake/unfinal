@@ -49,7 +49,8 @@ defmodule UnfinalWeb.EditorLive do
         show_pages_nav?: show_pages_nav?(segments),
         root_page_path: root_page_path(segments, path, true),
         page_paths: page_paths(segments, path),
-        pending_delete_path: nil
+        pending_delete_path: nil,
+        mobile_menu_open: false
       )
 
     {:ok, socket}
@@ -133,6 +134,13 @@ defmodule UnfinalWeb.EditorLive do
 
   def handle_event("delete_page", _params, socket), do: {:noreply, socket}
 
+  def handle_event("toggle_mobile_menu", _params, socket) do
+    {:noreply, assign(socket, mobile_menu_open: !socket.assigns.mobile_menu_open)}
+  end
+
+  def handle_event("close_mobile_menu", _params, socket) do
+    {:noreply, assign(socket, mobile_menu_open: false)}
+  end
   @impl true
   def handle_info(
         {:content_updated, storage_path, %{content: "", etag: nil, revision: 0}},
@@ -251,8 +259,34 @@ defmodule UnfinalWeb.EditorLive do
     ~H"""
     <div class="h-dvh min-h-dvh overflow-hidden bg-stone-50 text-stone-950 [font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
       <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-1">
-        <aside class="flex max-h-72 min-h-0 flex-col border-r border-stone-200/70 bg-stone-100 px-4 py-4 text-left lg:max-h-none">
-          <a href="/" class="text-[15px] font-semibold tracking-tight hover:opacity-80">Unfinal</a>
+        <aside
+          id="sidebar"
+          class={[
+            "flex min-h-0 flex-col border-r border-stone-200/70 bg-stone-100 px-4 py-4 text-left lg:max-h-none lg:overflow-visible",
+            @mobile_menu_open && "max-h-[70vh] overflow-y-auto"
+          ]}
+          phx-click-away="close_mobile_menu"
+        >
+          <div class="flex items-center justify-between">
+            <a href="/" class="text-[15px] font-semibold tracking-tight hover:opacity-80">Unfinal</a>
+            <button
+              type="button"
+              phx-click="toggle_mobile_menu"
+              class="flex items-center justify-center rounded-md p-1.5 text-stone-500 hover:bg-stone-200/70 hover:text-stone-700 lg:hidden"
+              aria-label={if(@mobile_menu_open, do: "Close menu", else: "Open menu")}
+            >
+              <.icon :if={!@mobile_menu_open} name="hero-bars-3" class="h-5 w-5" />
+              <.icon :if={@mobile_menu_open} name="hero-x-mark" class="h-5 w-5" />
+            </button>
+          </div>
+
+          <div
+            id="mobile-nav-content"
+            class={[
+              "flex-col flex-1 min-h-0 lg:flex",
+              if(@mobile_menu_open, do: "flex", else: "hidden")
+            ]}
+          >
 
           <nav :if={@show_pages_nav?} id="pages-nav" class="mt-7 text-sm" aria-label="Pages">
             <h2 class="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">
@@ -373,6 +407,8 @@ defmodule UnfinalWeb.EditorLive do
               >Logout</a>
             </div>
           </section>
+
+          </div>
         </aside>
 
         <main class="flex min-h-0 min-w-0 flex-col">
