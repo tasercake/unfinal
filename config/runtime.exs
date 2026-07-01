@@ -20,6 +20,8 @@ if System.get_env("PHX_SERVER") do
   config :unfinal, UnfinalWeb.Endpoint, server: true
 end
 
+# R2/S3 credentials kept for Litestream replica and explicit admin archive tasks.
+# Not used by the normal web app path after Phase 6 cutover.
 config :unfinal, :s3,
   bucket: System.get_env("UNFINAL_S3_BUCKET"),
   endpoint: System.get_env("UNFINAL_S3_ENDPOINT"),
@@ -27,30 +29,37 @@ config :unfinal, :s3,
   secret_access_key: System.get_env("UNFINAL_S3_SECRET_ACCESS_KEY"),
   region: System.get_env("UNFINAL_S3_REGION", "auto")
 
-# Storage mode configuration
-storage_mode_str = System.get_env("UNFINAL_STORAGE_MODE", "r2")
+# Storage mode: sqlite is the only supported mode after Phase 6 cutover.
+# Only override in prod or when explicitly set; dev/test config sets its own default.
+if config_env() == :prod do
+  storage_mode_str = System.get_env("UNFINAL_STORAGE_MODE", "sqlite")
 
-storage_mode =
-  case storage_mode_str do
-    "r2" ->
-      :r2
+  storage_mode =
+    case storage_mode_str do
+      "sqlite" ->
+        :sqlite
 
-    "sqlite" ->
-      :sqlite
+      other ->
+        raise "invalid UNFINAL_STORAGE_MODE: #{inspect(other)}. Phase 6 only supports sqlite"
+    end
 
-    other ->
-      raise "invalid UNFINAL_STORAGE_MODE: #{inspect(other)}. Expected: r2 | sqlite"
-  end
+  config :unfinal, :storage_mode, storage_mode
+end
 
-config :unfinal, :storage_mode, storage_mode
+# Legacy R2 archive read flag — used only by explicit admin/migration tasks
+if System.get_env("UNFINAL_ALLOW_R2_ARCHIVE_READ") == "true" do
+  config :unfinal, :allow_r2_archive_read?, true
+end
 
-config :unfinal,
-       :r2_read_fallback,
-       System.get_env("UNFINAL_R2_READ_FALLBACK", "false") in ~w(true 1 yes)
+# Phase 6 boot guard: fail fast if any R2 dual-write/fallback flag is enabled.
+# These flags are no longer supported by the normal app path.
+if System.get_env("UNFINAL_R2_DUAL_WRITE") in ~w(true 1 yes) do
+  raise "UNFINAL_R2_DUAL_WRITE is not supported after Phase 6 cutover. R2 is read-only archive. Remove this flag from your environment."
+end
 
-config :unfinal,
-       :r2_dual_write,
-       System.get_env("UNFINAL_R2_DUAL_WRITE", "false") in ~w(true 1 yes)
+if System.get_env("UNFINAL_R2_READ_FALLBACK") in ~w(true 1 yes) do
+  raise "UNFINAL_R2_READ_FALLBACK is not supported after Phase 6 cutover. R2 is read-only archive. Remove this flag from your environment."
+end
 
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.

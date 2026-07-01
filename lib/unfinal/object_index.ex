@@ -8,9 +8,9 @@ defmodule Unfinal.ObjectIndex do
     adapter().get_object(key)
   end
 
-  @spec put(key(), String.t()) :: :ok | {:error, term()}
-  def put(key, content) when is_binary(key) and is_binary(content) do
-    adapter().put_object(key, content)
+  @spec put(key(), String.t()) :: {:error, :r2_archive_read_only}
+  def put(_key, _content) do
+    {:error, :r2_archive_read_only}
   end
 
   @spec adapter() :: module()

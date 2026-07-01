@@ -29,21 +29,6 @@ append_env_if_missing() {
   fi
 }
 
-force_env_value() {
-  local key=$1
-  local value=$2
-  local quoted_value
-  quoted_value=$(quote_env "${value}")
-
-  if sudo grep -Eq "^${key}=" "${ENV_FILE}"; then
-    sudo sed -i "s|^${key}=.*|${key}=${quoted_value}|" "${ENV_FILE}"
-    log "forced ${key}=${value} in ${ENV_FILE}"
-  else
-    printf '%s=%s\n' "${key}" "${quoted_value}" | sudo tee -a "${ENV_FILE}" >/dev/null
-    log "added ${key}=${value} to ${ENV_FILE}"
-  fi
-}
-
 quote_shell() {
   printf '%q' "$1"
 }
@@ -201,6 +186,7 @@ append_env_if_missing "PORT" "${PORT}"
 append_env_if_missing "UNFINAL_DATA_DIR" "${UNFINAL_DATA_DIR}"
 append_env_if_missing "UNFINAL_DATABASE_PATH" "${UNFINAL_DATABASE_PATH}"
 append_env_if_missing "UNFINAL_LITESTREAM_REPLICA_PATH" "${UNFINAL_LITESTREAM_REPLICA_PATH}"
+append_env_if_missing "UNFINAL_STORAGE_MODE" "sqlite"
 
 if ! sudo grep -Eq '^SECRET_KEY_BASE=' "${ENV_FILE}"; then
   if command -v openssl >/dev/null 2>&1; then
@@ -216,13 +202,25 @@ fi
 
 load_env_file
 
-# ── Force cutover env flags ───────────────────────────────────────────────────
+# ── Phase 6 boot guard: reject dual-write/fallback flags ────────────────────
 
-log "force cutover env flags"
-force_env_value "UNFINAL_STORAGE_MODE" "sqlite"
-force_env_value "UNFINAL_R2_READ_FALLBACK" "true"
-force_env_value "UNFINAL_R2_DUAL_WRITE" "true"
-load_env_file
+log "Phase 6 deploy guard"
+if [[ "${UNFINAL_R2_DUAL_WRITE:-}" == "true" || "${UNFINAL_R2_DUAL_WRITE:-}" == "1" || "${UNFINAL_R2_DUAL_WRITE:-}" == "yes" ]]; then
+  printf 'UNFINAL_R2_DUAL_WRITE is set to a truthy value. Phase 6 forbids dual-write. Remove this flag from %s\n' "${ENV_FILE}" >&2
+  exit 1
+fi
+
+if [[ "${UNFINAL_R2_READ_FALLBACK:-}" == "true" || "${UNFINAL_R2_READ_FALLBACK:-}" == "1" || "${UNFINAL_R2_READ_FALLBACK:-}" == "yes" ]]; then
+  printf 'UNFINAL_R2_READ_FALLBACK is set to a truthy value. Phase 6 forbids read fallback. Remove this flag from %s\n' "${ENV_FILE}" >&2
+  exit 1
+fi
+
+if [[ -n "${UNFINAL_STORAGE_MODE:-}" && "${UNFINAL_STORAGE_MODE}" != "sqlite" ]]; then
+  printf 'UNFINAL_STORAGE_MODE must be sqlite (got: %s). Phase 6 uses SQLite only.\n' "${UNFINAL_STORAGE_MODE}" >&2
+  exit 1
+fi
+
+log "Phase 6 guard passed: SQLite-only, no dual-write/fallback"
 
 log "fetch deps"
 mix deps.get --only prod
@@ -347,29 +345,19 @@ fi
 rm -rf "${temp_restore_dir}"
 log "Litestream restore validation passed (integrity_check ok)"
 
-# ── R2→SQLite backfill ───────────────────────────────────────────────────────
-
-# Stop the running app first — the backfill mix task boots the full Phoenix
-# application (needed for Repo + S3 adapter), which would collide with the
-# already-listening production Endpoint on port 8000.
-if sudo systemctl is-active --quiet "${SERVICE_NAME}.service"; then
-  log "stop ${SERVICE_NAME} for backfill (will restart at end)"
-  sudo systemctl stop "${SERVICE_NAME}.service"
-fi
-
-log "ensure migration reports directory"
-sudo install -d -m 0750 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${UNFINAL_DATA_DIR}/migration-reports"
-
-log "backfill R2 into SQLite"
-report_path="${UNFINAL_DATA_DIR}/migration-reports/r2-to-sqlite-$(date -u +%Y%m%dT%H%M%SZ).json"
-mix unfinal.migrate_r2_to_sqlite --commit --report "${report_path}"
-
-# ── Cutover verification ─────────────────────────────────────────────────────
-
-log "cutover verification"
-mix unfinal.verify_sqlite_cutover
+# ── Phase 6: No R2 backfill or cutover verification in normal deploy ────────
+# R2 backfill and cutover verification are explicit admin tasks only.
+# To run manually:
+#   mix unfinal.migrate_r2_to_sqlite --allow-r2-archive-read --commit
+#   mix unfinal.verify_sqlite_cutover --allow-r2-archive-read
 
 # ── Phoenix app: write service + reload + restart ───────────────────────────
+
+# Stop the running app before restart
+if sudo systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+  log "stop ${SERVICE_NAME} for restart"
+  sudo systemctl stop "${SERVICE_NAME}.service"
+fi
 
 log "reload and restart unfinal"
 log "write systemd service ${SERVICE_FILE}"

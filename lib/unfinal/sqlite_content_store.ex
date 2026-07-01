@@ -1,11 +1,8 @@
 defmodule Unfinal.SqliteContentStore do
   @moduledoc """
-  ContentStore adapter for SQLite-primary mode with temporary R2 dual-write.
+  ContentStore adapter for SQLite-primary mode.
 
-  - Reads come from SQLite first; R2 read-fallback repairs missing SQLite rows
-    (insert-if-absent only, never overwrites newer SQLite data).
-  - Writes go to SQLite first; on success, best-effort async R2 mirror is kicked off.
-  - SQLite write failures do NOT trigger R2 mirrors.
+  All reads and writes go to SQLite exclusively. No R2 fallback or dual-write.
   """
 
   @behaviour Unfinal.ContentStore
@@ -14,8 +11,6 @@ defmodule Unfinal.SqliteContentStore do
 
   alias Unfinal.ContentStore
   alias Unfinal.ContentStore.Document
-  alias Unfinal.R2Mirror
-  alias Unfinal.S3ObjectStore
   alias Unfinal.SqliteDocuments
 
   # ── get/1 ─────────────────────────────────────────────────────────────────────
@@ -29,11 +24,7 @@ defmodule Unfinal.SqliteContentStore do
         {:ok, doc}
 
       {:error, :not_found} ->
-        if Application.get_env(:unfinal, :r2_read_fallback, false) do
-          handle_r2_fallback(normalized)
-        else
-          {:ok, ContentStore.missing(normalized)}
-        end
+        {:ok, ContentStore.missing(normalized)}
 
       {:error, reason} ->
         {:error, reason}
@@ -48,7 +39,6 @@ defmodule Unfinal.SqliteContentStore do
 
     case SqliteDocuments.put(normalized, content, base_etag, base_revision) do
       {:ok, %Document{} = doc} ->
-        R2Mirror.mirror_document_async(normalized, content)
         {:ok, doc}
 
       {:stale, %Document{} = doc} ->
@@ -71,22 +61,6 @@ defmodule Unfinal.SqliteContentStore do
 
     case sqlite_delete(normalized, base_revision) do
       {:ok, doc} ->
-        if Application.get_env(:unfinal, :r2_dual_write, false) do
-          Task.Supervisor.async_nolink(Unfinal.DocumentTaskSupervisor, fn ->
-            r2_key = ContentStore.object_key(normalized)
-
-            case S3ObjectStore.put_object(r2_key, "") do
-              :ok ->
-                :ok
-
-              {:error, reason} ->
-                Logger.warning(
-                  "best-effort R2 delete mirror failed for #{normalized}: #{inspect(reason)}"
-                )
-            end
-          end)
-        end
-
         {:ok, doc}
 
       other ->
@@ -120,39 +94,6 @@ defmodule Unfinal.SqliteContentStore do
     end
 
     :ok
-  end
-
-  # ── Private: R2 read fallback with repair ─────────────────────────────────────
-
-  defp handle_r2_fallback(path) do
-    case S3ObjectStore.get(path) do
-      {:ok, %Document{etag: nil, revision: 0, content: ""}} ->
-        {:ok, ContentStore.missing(path)}
-
-      {:ok, %Document{} = r2_doc} ->
-        if present_document?(r2_doc) do
-          SqliteDocuments.insert_missing_from_r2(path, r2_doc)
-
-          case SqliteDocuments.fetch(path) do
-            {:ok, %Document{} = sqlite_doc} -> {:ok, sqlite_doc}
-            {:error, :not_found} -> {:ok, r2_doc}
-            {:error, _} -> {:ok, r2_doc}
-          end
-        else
-          {:ok, ContentStore.missing(path)}
-        end
-
-      {:ok, _missing} ->
-        {:ok, ContentStore.missing(path)}
-
-      {:error, reason} ->
-        Logger.warning("R2 read fallback failed for #{path}: #{inspect(reason)}")
-        {:ok, ContentStore.missing(path)}
-    end
-  end
-
-  defp present_document?(%Document{} = doc) do
-    doc.etag != nil or doc.revision > 0 or doc.write_id != nil or doc.content != ""
   end
 
   # ── Private: SQLite CAS delete ────────────────────────────────────────────────

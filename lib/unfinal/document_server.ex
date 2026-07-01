@@ -14,7 +14,6 @@ defmodule Unfinal.DocumentServer do
   alias Unfinal.ContentStore.Document
   alias Unfinal.Documents
   alias Unfinal.PageIndex
-  alias Unfinal.SQLiteShadow
 
   @initial_retry_ms 25
   @max_retry_ms 1_000
@@ -177,29 +176,7 @@ defmodule Unfinal.DocumentServer do
   end
 
   defp write_content(path, content, base_etag, base_revision) do
-    case ContentStore.adapter().put(path, content, base_etag, base_revision) do
-      {:ok, %Document{} = doc} ->
-        # Skip shadow write in SQLite-primary mode (already written by adapter)
-        unless Application.get_env(:unfinal, :storage_mode) == :sqlite do
-          case SQLiteShadow.upsert_document(doc, DateTime.utc_now()) do
-            :ok ->
-              :ok
-
-            :ignored ->
-              :ok
-
-            {:error, reason} ->
-              Logger.warning(
-                "sqlite shadow document upsert failed for #{path}: #{inspect(reason)}"
-              )
-          end
-        end
-
-        {:ok, doc}
-
-      other ->
-        other
-    end
+    ContentStore.adapter().put(path, content, base_etag, base_revision)
   end
 
   defp merge_durable_metadata(%Document{} = visible_doc, %Document{} = durable_doc) do

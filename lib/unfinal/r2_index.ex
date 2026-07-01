@@ -14,8 +14,6 @@ defmodule Unfinal.R2Index do
   **Namespace index (TSV):** `namespace<TAB>email\n`, sorted by namespace.
   """
 
-  alias Unfinal.ObjectIndex
-
   @type page_entry :: %{path: String.t(), updated_at: String.t()}
 
   # ─── Page Index (NDJSON) ───
@@ -58,12 +56,11 @@ defmodule Unfinal.R2Index do
   end
 
   @doc """
-  Write page index NDJSON to R2 via ObjectIndex.
+  Write page index NDJSON to R2. Retired after Phase 6 cutover; R2 is read-only archive.
   """
-  @spec write_page_index(String.t(), [page_entry()]) :: :ok | {:error, term()}
-  def write_page_index(namespace, entries) when is_binary(namespace) and is_list(entries) do
-    content = serialize_page_index(entries)
-    ObjectIndex.put(page_index_key(namespace), content)
+  @spec write_page_index(String.t(), [page_entry()]) :: {:error, :r2_archive_read_only}
+  def write_page_index(_namespace, _entries) do
+    {:error, :r2_archive_read_only}
   end
 
   @doc """
@@ -115,12 +112,12 @@ defmodule Unfinal.R2Index do
   end
 
   @doc """
-  Write namespace index TSV to R2 via ObjectIndex.
+  Write namespace index TSV to R2. Retired after Phase 6 cutover; R2 is read-only archive.
   """
-  @spec write_namespace_index(%{String.t() => %{email: String.t()}}) :: :ok | {:error, term()}
-  def write_namespace_index(claims) when is_map(claims) do
-    content = serialize_namespace_index(claims)
-    ObjectIndex.put(namespace_index_key(), content)
+  @spec write_namespace_index(%{String.t() => %{email: String.t()}}) ::
+          {:error, :r2_archive_read_only}
+  def write_namespace_index(_claims) do
+    {:error, :r2_archive_read_only}
   end
 
   @doc """

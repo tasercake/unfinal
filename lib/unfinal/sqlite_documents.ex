@@ -51,12 +51,15 @@ defmodule Unfinal.SqliteDocuments do
     with {:ok, {namespace, relative_path}} <- parts(path) do
       now_iso = DateTime.to_iso8601(DateTime.utc_now())
 
+      # INSERT or upgrade a placeholder row (revision 0 from touch_page) to revision 1
       sql =
         "INSERT INTO documents(path, namespace, relative_path, content, revision, updated_at) " <>
-          "VALUES (?1, ?2, ?3, ?4, 1, ?5)"
+          "VALUES (?1, ?2, ?3, ?4, 1, ?5) " <>
+          "ON CONFLICT(path) DO UPDATE SET content = excluded.content, revision = 1, updated_at = excluded.updated_at WHERE documents.revision = 0"
 
       case query(sql, [path, namespace, relative_path, content, now_iso]) do
         {:ok, %{num_rows: 1}} -> {:ok, build_doc(path, content, 1, now_iso)}
+        {:ok, %{num_rows: 0}} -> {:stale, fetch_latest!(path)}
         {:error, reason} -> {:error, reason}
       end
     end

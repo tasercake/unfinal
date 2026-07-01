@@ -7,8 +7,6 @@ defmodule Unfinal.NamespaceStore do
   use GenServer
   require Logger
 
-  alias Unfinal.SQLiteShadow
-
   @type namespace :: String.t()
   @type email :: String.t()
   @type owner :: %{email: email()}
@@ -67,11 +65,12 @@ defmodule Unfinal.NamespaceStore do
 
       true ->
         now = DateTime.to_iso8601(DateTime.utc_now())
-        sql = "INSERT INTO namespace_claims(namespace, email, claimed_at) VALUES (?1, ?2, ?3)"
+
+        sql =
+          "INSERT OR IGNORE INTO namespace_claims(namespace, email, claimed_at) VALUES (?1, ?2, ?3)"
 
         case repo_query(sql, [namespace, email, now]) do
           {:ok, %{num_rows: 1}} ->
-            mirror_namespace_index_async()
             {:reply, :ok, state}
 
           {:ok, %{num_rows: 0}} ->
@@ -120,15 +119,6 @@ defmodule Unfinal.NamespaceStore do
         new_r2_state = Map.put(state.r2_state, namespace, %{email: email})
         :ok = write_all_r2(new_r2_state)
 
-        case SQLiteShadow.insert_namespace_claim(namespace, email, DateTime.utc_now()) do
-          :ok ->
-            :ok
-
-          {:error, reason} ->
-            Logger.warning(
-              "sqlite shadow namespace claim insert failed for #{namespace}: #{inspect(reason)}"
-            )
-        end
 
         {:reply, :ok, %{state | r2_state: new_r2_state}}
     end
@@ -216,18 +206,9 @@ defmodule Unfinal.NamespaceStore do
         "#{namespace}\t#{owner.email}\n"
       end)
 
-    :ok = Unfinal.ObjectIndex.put(@index_key, content)
-  end
-
-  defp mirror_namespace_index_async do
-    # Read current SQLite claims and mirror to R2
-    case repo_query("SELECT namespace, email FROM namespace_claims ORDER BY namespace", []) do
-      {:ok, %{rows: rows}} ->
-        claims = Map.new(rows, fn [ns, email] -> {ns, %{email: email}} end)
-        Unfinal.R2Mirror.mirror_namespace_index_async(claims)
-
-      {:error, reason} ->
-        Logger.warning("failed to read namespace claims for R2 mirror: #{inspect(reason)}")
+    case Unfinal.ObjectIndex.put(@index_key, content) do
+      :ok -> :ok
+      {:error, :r2_archive_read_only} -> :ok
     end
   end
 

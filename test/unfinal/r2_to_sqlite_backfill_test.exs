@@ -10,7 +10,9 @@ defmodule Unfinal.R2ToSQLiteBackfillTest do
   alias Unfinal.Repo
 
   setup do
+    Application.put_env(:unfinal, :storage_mode, :r2)
     Application.put_env(:unfinal, :object_store_adapter, FakeObjectStore)
+    Application.put_env(:unfinal, :allow_r2_archive_read?, true)
     FakeObjectStore.ensure_started()
     FakeObjectStore.clear()
 
@@ -23,6 +25,8 @@ defmodule Unfinal.R2ToSQLiteBackfillTest do
       Repo.query("DELETE FROM documents", [])
       Repo.query("DELETE FROM namespace_claims", [])
       Application.put_env(:unfinal, :object_store_adapter, FakeObjectStore)
+      Application.delete_env(:unfinal, :allow_r2_archive_read?)
+      Application.delete_env(:unfinal, :storage_mode)
     end)
 
     :ok
@@ -423,6 +427,27 @@ defmodule Unfinal.R2ToSQLiteBackfillTest do
 
       assert {:error, {:namespace_index_read_failed, :read_failed}} =
                R2ToSQLiteBackfill.run(mode: :commit)
+    end
+  end
+
+  # ── Archive-read gating ────────────────────────────────────────────────────
+
+  describe "archive-read gating" do
+    test "raises when allow_r2_archive_read? is false" do
+      Application.put_env(:unfinal, :allow_r2_archive_read?, false)
+
+      assert_raise RuntimeError, ~r/R2 archive reads are disabled/, fn ->
+        R2ToSQLiteBackfill.run(mode: :commit)
+      end
+    end
+
+    test "raises when allow_r2_archive_read? is not set" do
+      Application.delete_env(:unfinal, :allow_r2_archive_read?)
+      System.delete_env("UNFINAL_ALLOW_R2_ARCHIVE_READ")
+
+      assert_raise RuntimeError, ~r/R2 archive reads are disabled/, fn ->
+        R2ToSQLiteBackfill.run(mode: :commit)
+      end
     end
   end
 end

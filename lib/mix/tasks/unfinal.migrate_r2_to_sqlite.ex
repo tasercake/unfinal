@@ -1,6 +1,8 @@
 defmodule Mix.Tasks.Unfinal.MigrateR2ToSqlite do
   @moduledoc """
-  Backfills SQLite from R2 indexes while R2 remains primary.
+  Backfills SQLite from R2 archive indexes.
+
+  Requires `--allow-r2-archive-read` to access the R2 read-only archive.
 
   Reads namespace claims and page indexes from R2/object storage,
   reconstructs full document paths, fetches documents through the
@@ -9,36 +11,52 @@ defmodule Mix.Tasks.Unfinal.MigrateR2ToSqlite do
 
   Modes:
 
-      mix unfinal.migrate_r2_to_sqlite --dry-run
-      mix unfinal.migrate_r2_to_sqlite --commit
-      mix unfinal.migrate_r2_to_sqlite --commit --report /path/to/report.json
+      mix unfinal.migrate_r2_to_sqlite --allow-r2-archive-read --dry-run
+      mix unfinal.migrate_r2_to_sqlite --allow-r2-archive-read --commit
+      mix unfinal.migrate_r2_to_sqlite --allow-r2-archive-read --commit --report /path/to/report.json
 
   Passing both `--dry-run` and `--commit` is invalid. Passing neither
   defaults to dry-run mode.
 
   Options:
 
-      --dry-run    Read R2 indexes, fetch documents, compute expected
-                   counts, but write no SQLite rows.
-      --commit     Perform reads and write guarded namespace claim and
-                   document upserts into SQLite.
-      --report PATH  Write a JSON report file with counts and details.
+      --allow-r2-archive-read  Required. Explicitly enables R2 archive reads for this task.
+      --dry-run                Read R2 indexes, fetch documents, compute expected
+                               counts, but write no SQLite rows.
+      --commit                 Perform reads and write guarded namespace claim and
+                               document upserts into SQLite.
+      --report PATH            Write a JSON report file with counts and details.
   """
 
   use Mix.Task
 
-  @shortdoc "Backfills SQLite from R2 indexes while R2 remains primary"
+  @shortdoc "Backfills SQLite from R2 indexes (requires --allow-r2-archive-read)"
 
   @impl true
   def run(args) do
     {opts, _remaining, invalid} =
       OptionParser.parse(args,
-        strict: [dry_run: :boolean, commit: :boolean, report: :string]
+        strict: [
+          allow_r2_archive_read: :boolean,
+          dry_run: :boolean,
+          commit: :boolean,
+          report: :string
+        ]
       )
 
     if invalid != [] do
       Mix.raise("invalid option(s): #{inspect(invalid)}")
     end
+
+    unless Keyword.get(opts, :allow_r2_archive_read, false) do
+      Mix.raise(
+        "R2 archive reads are disabled. R2 is read-only archive; normal app traffic uses SQLite.\n" <>
+          "Pass --allow-r2-archive-read to explicitly enable R2 archive access for this task."
+      )
+    end
+
+    # Set env flag so LegacyR2Archive.allowed?/0 returns true
+    System.put_env("UNFINAL_ALLOW_R2_ARCHIVE_READ", "true")
 
     dry_run? = Keyword.get(opts, :dry_run, false)
     commit? = Keyword.get(opts, :commit, false)

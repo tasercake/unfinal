@@ -30,6 +30,10 @@ defmodule Unfinal.R2ToSQLiteBackfill do
 
   @spec run(keyword()) :: {:ok, map()} | {:error, term()}
   def run(opts \\ []) when is_list(opts) do
+    unless Unfinal.LegacyR2Archive.allowed?() do
+      raise "R2 archive reads are disabled. Pass --allow-r2-archive-read or set UNFINAL_ALLOW_R2_ARCHIVE_READ=true to access R2 archive."
+    end
+
     started_at = Keyword.get(opts, :started_at, DateTime.utc_now())
     mode = Keyword.get(opts, :mode, :dry_run)
     report_path = Keyword.get(opts, :report_path)
