@@ -114,7 +114,10 @@ defmodule Unfinal.R2IndexMigration do
       |> Enum.sort_by(fn {namespace, _email} -> namespace end)
       |> Enum.map_join("", fn {namespace, email} -> "#{namespace}\t#{email}\n" end)
 
-    ObjectIndex.put(@namespace_index_key, content)
+    case ObjectIndex.put(@namespace_index_key, content) do
+      :ok -> :ok
+      {:error, :r2_archive_read_only} -> {:error, :r2_archive_read_only}
+    end
   end
 
   @spec maybe_write_pages([{String.t(), String.t()}], boolean()) :: :ok | {:error, term()}

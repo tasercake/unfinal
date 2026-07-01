@@ -4,6 +4,9 @@ defmodule UnfinalWeb.ClaimLiveTest do
   alias Unfinal.NamespaceStore
 
   setup do
+    # Switch NamespaceStore to SQLite mode without restarting
+    :sys.replace_state(NamespaceStore, fn state -> %{state | sqlite_primary: true} end)
+
     previous_data_dir = System.get_env("UNFINAL_DATA_DIR")
 
     data_dir =
@@ -16,6 +19,8 @@ defmodule UnfinalWeb.ClaimLiveTest do
     on_exit(fn ->
       NamespaceStore.clear()
       File.rm_rf!(data_dir)
+      # Switch back to R2 mode
+      :sys.replace_state(NamespaceStore, fn state -> %{state | sqlite_primary: false} end)
 
       if previous_data_dir do
         System.put_env("UNFINAL_DATA_DIR", previous_data_dir)

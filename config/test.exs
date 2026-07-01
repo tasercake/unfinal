@@ -17,13 +17,11 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
+# FakeObjectStore kept for legacy R2 archive tests only; normal test path uses SQLite.
 config :unfinal, :object_store_adapter, Unfinal.FakeObjectStore
 
-# Default test storage mode is R2-primary (fake); individual tests can
-# override via Application.put_env(:unfinal, :storage_mode, :sqlite)
-# and restore on exit.
+# R2 is the default test storage mode so R2-era tests continue to work.
+# SQLite-specific tests and editor_live_test override via Application.put_env.
 config :unfinal, :storage_mode, :r2
-config :unfinal, :r2_read_fallback, false
-config :unfinal, :r2_dual_write, false
 
 config :unfinal, Unfinal.Repo, database: Path.expand("../tmp/unfinal-test.sqlite3", __DIR__)

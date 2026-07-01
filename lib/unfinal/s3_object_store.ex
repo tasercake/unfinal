@@ -35,38 +35,14 @@ defmodule Unfinal.S3ObjectStore do
   end
 
   @impl true
-  def put(path, content, nil, 0) do
-    put_conditional(path, content, [{"if-none-match", "*"}], 1)
+  def put(_path, _content, _base_etag, _base_revision) do
+    {:error, :r2_archive_read_only}
   end
-
-  def put(path, content, base_etag, base_revision) when is_binary(base_etag) do
-    put_conditional(path, content, [{"if-match", base_etag}], base_revision + 1)
-  end
-
-  def put(path, _content, _base_etag, _base_revision), do: {:stale, latest!(path)}
 
   @impl true
-  def delete(path, nil, 0), do: {:ok, ContentStore.missing(path)}
-
-  def delete(path, base_etag, _base_revision) when is_binary(base_etag) do
-    key = ContentStore.object_key(path)
-
-    case request(:delete, key, [{"if-match", base_etag}], "") do
-      {:ok, status, _headers, _body} when status in [200, 204] ->
-        {:ok, ContentStore.missing(path)}
-
-      {:ok, status, _headers, _body} when status in [404, 409, 412] ->
-        {:stale, latest!(path)}
-
-      {:ok, status, _headers, body} ->
-        {:error, {:http_status, status, body}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+  def delete(_path, _base_etag, _base_revision) do
+    {:error, :r2_archive_read_only}
   end
-
-  def delete(path, _base_etag, _base_revision), do: {:stale, latest!(path)}
 
   @impl true
   def clear, do: :ok
@@ -81,67 +57,9 @@ defmodule Unfinal.S3ObjectStore do
     end
   end
 
-  @spec put_object(String.t(), String.t()) :: :ok | {:error, term()}
-  def put_object(key, content) when is_binary(key) and is_binary(content) do
-    case request(:put, key, [], content) do
-      {:ok, status, _headers, _body} when status in [200, 201] -> :ok
-      {:ok, status, _headers, body} -> {:error, {:http_status, status, body}}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp put_conditional(path, content, condition_headers, next_revision) do
-    key = ContentStore.object_key(path)
-    write_id = write_id()
-
-    headers = [
-      {"x-amz-meta-unfinal-revision", Integer.to_string(next_revision)},
-      {@write_id_header, write_id} | condition_headers
-    ]
-
-    case request(:put, key, headers, content) do
-      {:ok, status, headers, _body} when status in [200, 201] ->
-        {:ok,
-         %Document{
-           path: path,
-           content: content,
-           etag: header(headers, "etag"),
-           revision: next_revision,
-           write_id: write_id
-         }}
-
-      {:ok, status, _headers, _body} when status in [409, 412] ->
-        {:stale, latest!(path)}
-
-      {:ok, status, _headers, body} ->
-        {:error, {:http_status, status, body}}
-
-      {:error, reason} ->
-        reconcile_ambiguous_put(path, write_id, reason)
-    end
-  end
-
-  defp reconcile_ambiguous_put(path, write_id, put_reason) do
-    case get(path) do
-      {:ok, %Document{write_id: ^write_id} = latest} ->
-        {:ok, latest}
-
-      {:ok, latest} ->
-        {:error, {:ambiguous_put_unresolved, put: put_reason, latest: latest}}
-
-      {:error, get_reason} ->
-        {:error, {:ambiguous_put_unresolved, put: put_reason, latest: {:error, get_reason}}}
-    end
-  end
-
-  defp latest!(path) do
-    case get(path) do
-      {:ok, doc} ->
-        doc
-
-      {:error, reason} ->
-        raise "failed to read latest document after stale write: #{inspect(reason)}"
-    end
+  @spec put_object(String.t(), String.t()) :: {:error, :r2_archive_read_only}
+  def put_object(_key, _content) do
+    {:error, :r2_archive_read_only}
   end
 
   defp request(method, key, headers, body) do
@@ -265,8 +183,6 @@ defmodule Unfinal.S3ObjectStore do
 
   defp sha256_hex(data), do: :crypto.hash(:sha256, data) |> Base.encode16(case: :lower)
   defp hmac(key, data), do: :crypto.mac(:hmac, :sha256, key, data)
-
-  defp write_id, do: Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 
   defp signing_key(secret, date, region),
     do: hmac(hmac(hmac(hmac("AWS4" <> secret, date), region), "s3"), "aws4_request")

@@ -10,8 +10,7 @@ defmodule Unfinal.SqliteContentStoreTest do
   setup do
     # Set SQLite-primary mode for these tests
     StorageModeHelper.set_storage_mode!(:sqlite)
-    StorageModeHelper.set_r2_read_fallback!(true)
-    StorageModeHelper.set_r2_dual_write!(false)
+
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
     Unfinal.FakeObjectStore.ensure_started()
 
@@ -47,8 +46,7 @@ defmodule Unfinal.SqliteContentStoreTest do
       SQLiteCleanup.clear_all()
       Unfinal.FakeObjectStore.clear()
       StorageModeHelper.set_storage_mode!(:r2)
-      StorageModeHelper.set_r2_read_fallback!(false)
-      StorageModeHelper.set_r2_dual_write!(false)
+
       Application.put_env(:unfinal, :s3, original_s3)
     end)
   end
@@ -70,22 +68,17 @@ defmodule Unfinal.SqliteContentStoreTest do
              SqliteContentStore.get("/nonexistent")
   end
 
-  test "SQLite miss + R2 present repairs SQLite with insert-if-absent" do
+  test "SQLite miss returns missing without R2 fallback" do
     # Write to R2 only (simulating pre-migration data)
-    # Store the document content at the S3 object key for the request_fun bridge
     key = ContentStore.object_key("/r2-doc")
     Unfinal.FakeObjectStore.put_object(key, "r2 content")
 
-    # Read via SqliteContentStore — should fallback to R2, repair SQLite
-    assert {:ok, %Document{content: "r2 content"}} = SqliteContentStore.get("/r2-doc")
+    # Read via SqliteContentStore — no R2 fallback, returns missing
+    assert {:ok, %Document{content: "", etag: nil, revision: 0}} =
+             SqliteContentStore.get("/r2-doc")
 
-    # Verify SQLite now has the document
-    assert {:ok, %{content: "r2 content"}} =
-             Unfinal.SqliteDocuments.fetch("/r2-doc")
-
-    # Subsequent reads come from SQLite, not R2 (clear R2 to prove it)
-    Unfinal.FakeObjectStore.clear()
-    assert {:ok, %Document{content: "r2 content"}} = SqliteContentStore.get("/r2-doc")
+    # SQLite still has no document
+    assert {:error, :not_found} = Unfinal.SqliteDocuments.fetch("/r2-doc")
   end
 
   test "SQLite write with invalid base returns error" do
@@ -94,14 +87,12 @@ defmodule Unfinal.SqliteContentStoreTest do
     assert {:error, _} = result
   end
 
-  test "R2 fallback disabled returns missing on SQLite miss" do
-    StorageModeHelper.set_r2_read_fallback!(false)
-
-    # Write to R2 only via S3ObjectStore bridge
+  test "SQLite miss returns missing even when R2 has data" do
+    # R2 has data, but SQLite is source of truth
     key = ContentStore.object_key("/r2-only")
     Unfinal.FakeObjectStore.put_object(key, "r2 content")
 
-    # Read with fallback disabled — should return missing
+    # No fallback — SQLite miss returns missing
     assert {:ok, %Document{content: "", etag: nil, revision: 0}} =
              SqliteContentStore.get("/r2-only")
   end

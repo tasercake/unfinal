@@ -7,6 +7,7 @@ defmodule Unfinal.DocumentsTest do
   alias Unfinal.Documents
 
   setup do
+    Application.put_env(:unfinal, :storage_mode, :r2)
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
     Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
     Documents.clear()
@@ -16,9 +17,8 @@ defmodule Unfinal.DocumentsTest do
     Unfinal.Repo.query("DELETE FROM namespace_claims", [])
 
     on_exit(fn ->
+      Application.delete_env(:unfinal, :storage_mode)
       Documents.clear()
-      # Restore default repo in case test overrode it
-      Application.put_env(:unfinal, :sqlite_shadow_repo, Unfinal.Repo)
     end)
   end
 
@@ -162,88 +162,143 @@ defmodule Unfinal.DocumentsTest do
     assert Documents.get("/stale").content == "pending"
   end
 
-  test "successful R2 flush shadow upserts SQLite document" do
+  test "successful R2 flush persists content to object store" do
     Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/alpha/notes"))
 
-    assert :ok = Documents.queue_put("/alpha/notes", "shadowed")
+    assert :ok = Documents.queue_put("/alpha/notes", "persisted")
 
-    assert_receive {:content_updated, "/alpha/notes", %{content: "shadowed", revision: 1}}, 500
+    assert_receive {:content_updated, "/alpha/notes", %{content: "persisted", revision: 1}}, 500
 
     # R2 FakeObjectStore has the persisted content
     assert_eventually(fn ->
       {:ok, doc} = Unfinal.FakeObjectStore.get("/alpha/notes")
-      doc.content == "shadowed"
+      doc.content == "persisted"
     end)
-
-    # SQLite documents row was shadow-upserted
-    {:ok, %{rows: rows}} =
-      Unfinal.Repo.query(
-        "SELECT path, namespace, relative_path, content, revision FROM documents WHERE path = ?1",
-        ["/alpha/notes"]
-      )
-
-    assert [["/alpha/notes", "alpha", "/notes", "shadowed", 1]] = rows
   end
 
-  test "sqlite shadow failure does not fail document save or R2 persistence" do
-    Application.put_env(:unfinal, :sqlite_shadow_repo, Unfinal.FailingSQLiteShadowRepo)
+  test "R2 flush does not write to SQLite in R2 mode" do
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/alpha/r2only"))
 
-    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/alpha/fail-shadow"))
+    assert :ok = Documents.queue_put("/alpha/r2only", "r2 content")
 
-    log =
-      capture_log(fn ->
-        assert :ok = Documents.queue_put("/alpha/fail-shadow", "r2 wins")
-
-        assert_receive {:content_updated, "/alpha/fail-shadow", %{content: "r2 wins"}}, 500
-      end)
+    assert_receive {:content_updated, "/alpha/r2only", %{content: "r2 content"}}, 500
 
     # R2 FakeObjectStore has the persisted content
     assert_eventually(fn ->
-      {:ok, doc} = Unfinal.FakeObjectStore.get("/alpha/fail-shadow")
-      doc.content == "r2 wins"
+      {:ok, doc} = Unfinal.FakeObjectStore.get("/alpha/r2only")
+      doc.content == "r2 content"
     end)
 
-    assert log =~ "sqlite shadow document upsert failed for /alpha/fail-shadow"
+    # SQLite documents table was NOT written to in R2 mode
+    {:ok, %{rows: rows}} =
+      Unfinal.Repo.query(
+        "SELECT path FROM documents WHERE path = ?1",
+        ["/alpha/r2only"]
+      )
+
+    assert rows == []
   end
 
-  test "document shadow upsert does not clobber newer SQLite row" do
-    # Seed SQLite row with a much higher revision
-    seed_sql = """
-    INSERT INTO documents(path, namespace, relative_path, content, revision, updated_at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-    """
+  # ── SQLite-only mode tests ───────────────────────────────────────────────────
 
-    Unfinal.Repo.query(seed_sql, [
-      "/alpha/stale",
-      "alpha",
-      "/stale",
-      "newer sqlite",
-      99,
-      DateTime.to_iso8601(~U[2025-01-01 00:00:00Z])
-    ])
+  test "sqlite-only: queue_put persists to SQLite and broadcasts" do
+    Application.put_env(:unfinal, :storage_mode, :sqlite)
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/testns/saved"))
 
-    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/alpha/stale"))
+    assert :ok = Documents.queue_put("/testns/saved", "sqlite content")
 
-    assert :ok = Documents.queue_put("/alpha/stale", "older r2 revision")
-
-    assert_receive {:content_updated, "/alpha/stale",
-                    %{content: "older r2 revision", revision: 1}},
+    assert_receive {:content_updated, "/testns/saved", %{content: "sqlite content", revision: 1}},
                    500
 
-    # R2 FakeObjectStore has the new content at revision 1
-    assert_eventually(fn ->
-      {:ok, doc} = Unfinal.FakeObjectStore.get("/alpha/stale")
-      doc.content == "older r2 revision" and doc.revision == 1
-    end)
-
-    # SQLite row remains unchanged at revision 99
+    # Verify persisted in SQLite
     {:ok, %{rows: rows}} =
       Unfinal.Repo.query(
         "SELECT content, revision FROM documents WHERE path = ?1",
-        ["/alpha/stale"]
+        ["/testns/saved"]
       )
 
-    assert [["newer sqlite", 99]] = rows
+    assert [["sqlite content", 1]] = rows
+  after
+    Application.delete_env(:unfinal, :storage_mode)
+  end
+
+  test "sqlite-only: get reads from SQLite" do
+    Application.put_env(:unfinal, :storage_mode, :sqlite)
+
+    assert :ok = Documents.queue_put("/testns/readme", "read this")
+    assert Documents.get("/testns/readme").content == "read this"
+  after
+    Application.delete_env(:unfinal, :storage_mode)
+  end
+
+  test "sqlite-only: no R2 writes or reads during document save" do
+    Application.put_env(:unfinal, :storage_mode, :sqlite)
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.R2WriteSpy)
+
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/testns/spy"))
+
+    assert :ok = Documents.queue_put("/testns/spy", "no r2")
+
+    assert_receive {:content_updated, "/testns/spy", %{content: "no r2"}}, 500
+
+    refute_received {:unexpected_r2_write, _, _}
+    refute_received {:unexpected_r2_read, _, _}
+
+    # Verify SQLite has the data
+    assert Documents.get("/testns/spy").content == "no r2"
+  after
+    Application.delete_env(:unfinal, :storage_mode)
+    Application.delete_env(:unfinal, :object_store_adapter)
+  end
+
+  test "sqlite-only: SQLite miss returns empty document without R2 fallback" do
+    Application.put_env(:unfinal, :storage_mode, :sqlite)
+    Application.put_env(:unfinal, :object_store_adapter, Unfinal.R2WriteSpy)
+
+    doc = Documents.get("/nonexistent/path")
+    assert doc.content == ""
+    assert doc.etag == nil
+    assert doc.revision == 0
+
+    refute_received {:unexpected_r2_read, _, _}
+  after
+    Application.delete_env(:unfinal, :storage_mode)
+    Application.delete_env(:unfinal, :object_store_adapter)
+  end
+
+  test "sqlite-only: revision increments on successive writes" do
+    Application.put_env(:unfinal, :storage_mode, :sqlite)
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/testns/versioned"))
+
+    assert :ok = Documents.queue_put("/testns/versioned", "v1")
+    assert_receive {:content_updated, "/testns/versioned", %{revision: 1}}, 500
+
+    assert :ok = Documents.queue_put("/testns/versioned", "v2")
+    assert_receive {:content_updated, "/testns/versioned", %{revision: 2}}, 500
+
+    doc = Documents.get("/testns/versioned")
+    assert doc.content == "v2"
+    assert doc.revision == 2
+    assert is_binary(doc.etag)
+  after
+    Application.delete_env(:unfinal, :storage_mode)
+  end
+
+  test "sqlite-only: empty content is persisted as-is" do
+    Application.put_env(:unfinal, :storage_mode, :sqlite)
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/testns/empty"))
+
+    assert :ok = Documents.queue_put("/testns/empty", "existing")
+    assert_receive {:content_updated, "/testns/empty", %{content: "existing"}}, 500
+
+    assert :ok = Documents.queue_put("/testns/empty", "")
+    assert_receive {:content_updated, "/testns/empty", %{content: "", revision: 2}}, 500
+
+    doc = Documents.get("/testns/empty")
+    assert doc.content == ""
+    assert doc.revision == 2
+  after
+    Application.delete_env(:unfinal, :storage_mode)
   end
 
   defp assert_eventually(fun, attempts \\ 30)

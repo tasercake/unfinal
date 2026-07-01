@@ -2,7 +2,6 @@ defmodule Unfinal.PageIndex do
   @moduledoc "Live namespace page index facade."
 
   alias Unfinal.DocumentPath
-  alias Unfinal.ObjectIndex
 
   @topic_prefix "page_index:"
 
@@ -37,7 +36,6 @@ defmodule Unfinal.PageIndex do
           case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso) do
             :ok ->
               entries = Unfinal.SqliteDocuments.list_namespace(namespace)
-              Unfinal.R2Mirror.mirror_page_index_async(namespace, entries)
 
               Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(namespace), {
                 :page_index_updated,
@@ -61,13 +59,19 @@ defmodule Unfinal.PageIndex do
 
   @spec clear() :: :ok
   def clear do
-    Unfinal.PageIndexSupervisor
-    |> DynamicSupervisor.which_children()
-    |> Enum.map(fn {_id, pid, _type, _modules} -> {pid, Process.monitor(pid)} end)
-    |> Enum.each(fn {pid, monitor_ref} ->
-      _result = DynamicSupervisor.terminate_child(Unfinal.PageIndexSupervisor, pid)
-      wait_for_down(monitor_ref)
-    end)
+    try do
+      Unfinal.PageIndexSupervisor
+      |> DynamicSupervisor.which_children()
+      |> Enum.map(fn {_id, pid, _type, _modules} -> {pid, Process.monitor(pid)} end)
+      |> Enum.each(fn {pid, monitor_ref} ->
+        _result = DynamicSupervisor.terminate_child(Unfinal.PageIndexSupervisor, pid)
+        wait_for_down(monitor_ref)
+      end)
+    rescue
+      ArgumentError -> :ok
+    catch
+      :exit, {:noproc, _} -> :ok
+    end
 
     :ok
   end
@@ -88,16 +92,9 @@ defmodule Unfinal.PageIndex do
     |> Enum.sort_by(& &1.updated_at, :desc)
   end
 
-  @spec write(String.t(), [entry()]) :: :ok | {:error, term()}
-  def write(namespace, entries) do
-    content =
-      entries
-      |> Enum.sort_by(& &1.updated_at, :desc)
-      |> Enum.map_join("", fn entry ->
-        Jason.encode!(%{path: entry.path, updated_at: entry.updated_at}) <> "\n"
-      end)
-
-    ObjectIndex.put(key(namespace), content)
+  @spec write(String.t(), [entry()]) :: {:error, :r2_archive_read_only}
+  def write(_namespace, _entries) do
+    {:error, :r2_archive_read_only}
   end
 
   @spec key(String.t()) :: String.t()

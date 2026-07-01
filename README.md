@@ -9,8 +9,7 @@ Each URL is a live document. Visitors can read in real time; configured authenti
 - Elixir/Phoenix LiveView + Phoenix PubSub for live updates.
 - Clerk OAuth/OIDC login + writer allowlist from `config/local/writers.txt`.
 - One live document per path (`/`, `/notes`, `/foo/bar`, etc.).
-- No database; documents persist as plain-text objects in S3-compatible storage.
-- Cloudflare R2-compatible conditional writes prevent stale clobbers.
+- Documents persist in SQLite (source of truth); Litestream provides async backup to S3/R2.
 - `.env` auto-load for local env vars.
 
 ## Run
@@ -25,19 +24,39 @@ Open <http://localhost:4000/>.
 
 ## Persistence
 
-Documents are stored in S3-compatible object storage, intended for Cloudflare R2.
+Documents are stored in a local SQLite database (source of truth). [Litestream](https://litestream.io/)
+runs as a sidecar to provide continuous async backup to an S3-compatible replica (e.g. Cloudflare R2).
 
 Required env vars:
 
 ```bash
-UNFINAL_S3_BUCKET=...
-UNFINAL_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
-UNFINAL_S3_ACCESS_KEY_ID=...
-UNFINAL_S3_SECRET_ACCESS_KEY=...
-UNFINAL_S3_REGION=auto
+UNFINAL_STORAGE_MODE=sqlite
+UNFINAL_DATABASE_PATH=./.data/unfinal.sqlite3
+UNFINAL_DATA_DIR=.data
 ```
 
-Each document key is `documents/#{sha256(path)}.txt`. Writes use S3 conditional `PUT` (`If-None-Match: *` for create, `If-Match: <etag>` for update) plus `unfinal-revision` metadata. ETags are opaque identity tokens, not ordering values.
+Litestream reads S3 replica credentials from the environment for backup/restore only.
+
+## Legacy R2 archive
+
+The original R2 object-store data remains as a **read-only archive**. The normal
+web app does **not** read from or write to R2. R2 archive access is available
+only through explicit operator tasks:
+
+```bash
+# Backfill from archived R2 indexes into SQLite (must pass the explicit flag)
+mix unfinal.migrate_r2_to_sqlite --allow-r2-archive-read
+```
+
+To enable R2 archive reads for admin tasks, set `UNFINAL_ALLOW_R2_ARCHIVE_READ=true`
+in the environment.
+
+## Rollback
+
+Rollback target is the Phase 5 app version with SQLite still primary.
+Do **not** switch back to R2-primary without accepting data loss or running a
+separate SQLite-to-R2 export first — R2 no longer contains writes made after
+the Phase 6 cutover.
 
 ## Clerk OAuth/OIDC
 

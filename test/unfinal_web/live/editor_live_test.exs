@@ -4,20 +4,24 @@ defmodule UnfinalWeb.EditorLiveTest do
   alias Phoenix.LiveView.Socket
   alias Unfinal.Documents
   alias Unfinal.NamespaceStore
-  alias Unfinal.PageIndex
+  alias Unfinal.SQLiteCleanup
+  alias Unfinal.SqliteDocuments
 
   setup do
-    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
+    Application.put_env(:unfinal, :storage_mode, :sqlite)
     Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
-    PageIndex.clear()
+    # Switch NamespaceStore to SQLite mode without restarting
+    :sys.replace_state(NamespaceStore, fn state -> %{state | sqlite_primary: true} end)
+    SQLiteCleanup.clear_all()
     Documents.clear()
-    NamespaceStore.clear()
 
     on_exit(fn ->
-      PageIndex.clear()
+      SQLiteCleanup.clear_all()
       Documents.clear()
-      NamespaceStore.clear()
       Application.delete_env(:unfinal, :content_store_flush_interval_ms)
+      Application.delete_env(:unfinal, :storage_mode)
+      # Switch NamespaceStore back to R2 mode
+      :sys.replace_state(NamespaceStore, fn state -> %{state | sqlite_primary: false} end)
     end)
 
     :ok
@@ -290,13 +294,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert [%{path: "/notes"}, %{path: "/"}] = Unfinal.PageIndex.list("alpha")
   end
 
-  test "writer save ack does not wait for slow durable index I/O", %{conn: conn} do
-    Unfinal.BlockingIndexObjectStore.ensure_started()
-    Unfinal.BlockingIndexObjectStore.reset()
-    Unfinal.BlockingIndexObjectStore.set_parent(self())
-    Unfinal.BlockingIndexObjectStore.block_put_object(true)
-    Application.put_env(:unfinal, :object_store_adapter, Unfinal.BlockingIndexObjectStore)
-
+  test "writer save ack is fast and document persists through SQLite", %{conn: conn} do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
     conn = logged_in(conn, "owner", "owner@example.com")
 
@@ -308,8 +306,6 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     assert elapsed_ms < 100
     assert_eventually(fn -> Documents.get("/alpha/fast").content == "fast ack" end)
-    assert_receive {:put_object_started, "indexes/namespaces/alpha.ndjson"}, 300
-    Unfinal.BlockingIndexObjectStore.release()
   end
 
   test "writer save queues without echoing content or durable metadata" do
@@ -440,7 +436,26 @@ defmodule UnfinalWeb.EditorLiveTest do
   defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 
   defp save_document(path, content) do
-    assert {:ok, _document} = Unfinal.FakeObjectStore.put(path, content, nil, 0)
+    # Use SqliteDocuments.put for namespace-relative paths; insert directly for root
+    case SqliteDocuments.put(path, content, nil, 0) do
+      {:ok, _doc} ->
+        :ok
+
+      :ignored ->
+        # Root path "/" is ignored by SqliteDocuments; insert directly
+        now_iso = DateTime.to_iso8601(DateTime.utc_now())
+
+        Unfinal.Repo.query(
+          "INSERT OR REPLACE INTO documents(path, namespace, relative_path, content, revision, updated_at) VALUES(?1, ?2, ?3, ?4, 1, ?5)",
+          [path, path, "/", content, now_iso],
+          timeout: 5_000
+        )
+
+        :ok
+
+      {:error, reason} ->
+        flunk("save_document failed: #{inspect(reason)}")
+    end
   end
 
   defp logged_in(conn, id, email) do

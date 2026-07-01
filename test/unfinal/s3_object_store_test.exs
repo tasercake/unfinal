@@ -17,79 +17,32 @@ defmodule Unfinal.S3ObjectStoreTest do
     :ok
   end
 
-  test "successful put returns document with per-write write_id without extra get" do
-    parent = self()
-
-    Application.put_env(:unfinal, :s3,
-      request_fun: fn
-        :put, _key, headers, "hello" ->
-          send(parent, {:put_headers, headers})
-          {:ok, 200, %{"etag" => "etag-1"}, ""}
-
-        :get, _key, _headers, _body ->
-          flunk("successful put must not issue get")
-      end
-    )
-
-    assert {:ok, doc} = S3ObjectStore.put("/notes", "hello", nil, 0)
-    assert doc.content == "hello"
-    assert doc.etag == "etag-1"
-    assert doc.revision == 1
-    assert is_binary(doc.write_id)
-
-    assert_received {:put_headers, headers}
-    assert {"x-amz-meta-unfinal-write-id", doc.write_id} in headers
+  test "put returns {:error, :r2_archive_read_only}" do
+    assert {:error, :r2_archive_read_only} = S3ObjectStore.put("/notes", "hello", nil, 0)
   end
 
-  test "commit-then-transport-error reconciles latest matching write_id as success" do
-    parent = self()
-
-    Application.put_env(:unfinal, :s3,
-      request_fun: fn
-        :put, _key, headers, "hello" ->
-          write_id = List.keyfind(headers, "x-amz-meta-unfinal-write-id", 0) |> elem(1)
-          send(parent, {:write_id, write_id})
-          {:error, :timeout}
-
-        :get, _key, _headers, _body ->
-          assert_received {:write_id, write_id}
-
-          {:ok, 200,
-           %{
-             "etag" => "etag-committed",
-             "x-amz-meta-unfinal-revision" => "1",
-             "x-amz-meta-unfinal-write-id" => write_id
-           }, "hello"}
-      end
-    )
-
-    assert {:ok, doc} = S3ObjectStore.put("/notes", "hello", nil, 0)
-    assert doc.content == "hello"
-    assert doc.etag == "etag-committed"
-    assert doc.revision == 1
-    assert is_binary(doc.write_id)
+  test "put with existing etag returns {:error, :r2_archive_read_only}" do
+    assert {:error, :r2_archive_read_only} =
+             S3ObjectStore.put("/notes", "hello", "etag-1", 1)
   end
 
-  test "transport error with different latest write_id stays ambiguous" do
-    Application.put_env(:unfinal, :s3,
-      request_fun: fn
-        :put, _key, _headers, "hello" ->
-          {:error, :timeout}
+  test "put with nil etag and non-zero revision returns {:error, :r2_archive_read_only}" do
+    assert {:error, :r2_archive_read_only} =
+             S3ObjectStore.put("/notes", "hello", nil, 5)
+  end
 
-        :get, _key, _headers, _body ->
-          {:ok, 200,
-           %{
-             "etag" => "etag-other",
-             "x-amz-meta-unfinal-revision" => "2",
-             "x-amz-meta-unfinal-write-id" => "other-write"
-           }, "other"}
-      end
-    )
+  test "delete returns {:error, :r2_archive_read_only}" do
+    assert {:error, :r2_archive_read_only} =
+             S3ObjectStore.delete("/notes", "etag-1", 1)
+  end
 
-    assert {:error, {:ambiguous_put_unresolved, put: :timeout, latest: latest}} =
-             S3ObjectStore.put("/notes", "hello", nil, 0)
+  test "delete with nil etag returns {:error, :r2_archive_read_only}" do
+    assert {:error, :r2_archive_read_only} =
+             S3ObjectStore.delete("/notes", nil, 0)
+  end
 
-    assert latest.content == "other"
-    assert latest.write_id == "other-write"
+  test "put_object returns {:error, :r2_archive_read_only}" do
+    assert {:error, :r2_archive_read_only} =
+             S3ObjectStore.put_object("indexes/test.ndjson", "content")
   end
 end
