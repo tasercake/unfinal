@@ -48,7 +48,8 @@ defmodule UnfinalWeb.EditorLive do
         show_claim_link?: show_claim_link?(session, claimed_namespace),
         show_pages_nav?: show_pages_nav?(segments),
         root_page_path: root_page_path(segments, path, true),
-        page_paths: page_paths(segments, path)
+        page_paths: page_paths(segments, path),
+        pending_delete_path: nil
       )
 
     {:ok, socket}
@@ -87,6 +88,50 @@ defmodule UnfinalWeb.EditorLive do
   end
 
   def handle_event("open_new_page", _params, socket), do: {:noreply, socket}
+
+  def handle_event(
+        "confirm_delete",
+        %{"path" => path},
+        %{assigns: %{claimed_namespace: namespace, viewed_namespace: namespace}} = socket
+      )
+      when is_binary(namespace) do
+    {:noreply, assign(socket, pending_delete_path: path)}
+  end
+
+  def handle_event("confirm_delete", _params, socket), do: {:noreply, socket}
+
+  def handle_event("cancel_delete", _params, socket) do
+    {:noreply, assign(socket, pending_delete_path: nil)}
+  end
+
+  def handle_event(
+        "delete_page",
+        %{"path" => url_path},
+        %{assigns: %{claimed_namespace: namespace, viewed_namespace: namespace, user: user}} =
+          socket
+      )
+      when is_binary(namespace) and is_binary(url_path) do
+    storage_path = String.replace_prefix(url_path, "/n", "")
+
+    case Documents.delete(storage_path, user["email"]) do
+      :ok ->
+        entries = Unfinal.PageIndex.list(namespace)
+
+        {:noreply,
+         socket
+         |> assign(
+           pending_delete_path: nil,
+           root_page_path: root_page_path_from_entries(namespace, entries),
+           page_paths: page_paths_from_entries(namespace, entries, socket.assigns.path)
+         )
+         |> push_navigate(to: namespace_path(namespace, "/"))}
+
+      {:error, _reason} ->
+        {:noreply, assign(socket, pending_delete_path: nil)}
+    end
+  end
+
+  def handle_event("delete_page", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_info(
@@ -257,23 +302,46 @@ defmodule UnfinalWeb.EditorLive do
 
               <a
                 :if={@path != @root_page_path and @path not in @page_paths}
-                class="block rounded-lg bg-white/70 px-3 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                class="group flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                 href={@path}
               >
-                {display_page_path(@path)}
+                <span>{display_page_path(@path)}</span>
+                <button
+                  :if={@writer?}
+                  type="button"
+                  phx-click="confirm_delete"
+                  phx-value-path={@path}
+                  class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-red-600 group-hover:block"
+                  title="Delete page"
+                >
+                  <span class="hero-trash-solid h-3.5 w-3.5" />
+                </button>
               </a>
 
-              <a
+              <div
                 :for={path <- @page_paths}
-                class={[
-                  "block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
-                  path == @path &&
-                    "bg-white/70 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
-                ]}
-                href={path}
+                class="group flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950"
               >
-                {display_page_path(path)}
-              </a>
+                <a
+                  class={[
+                    path == @path &&
+                      "bg-white/70 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                  ]}
+                  href={path}
+                >
+                  {display_page_path(path)}
+                </a>
+                <button
+                  :if={@writer?}
+                  type="button"
+                  phx-click="confirm_delete"
+                  phx-value-path={path}
+                  class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-red-600 group-hover:block"
+                  title="Delete page"
+                >
+                  <span class="hero-trash-solid h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </nav>
 
@@ -338,6 +406,34 @@ defmodule UnfinalWeb.EditorLive do
           ><%= @content %></article>
         </main>
       </div>
+
+      <dialog
+        :if={@pending_delete_path}
+        id="delete-confirm"
+        open
+        class="fixed inset-0 z-50 m-auto h-fit w-80 rounded-lg bg-white p-6 shadow-xl backdrop:bg-black/40"
+      >
+        <p class="text-sm text-stone-600">
+          Permanently delete <strong class="text-stone-900">{display_page_path(@pending_delete_path)}</strong>?
+        </p>
+        <div class="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            phx-click="cancel_delete"
+            class="rounded-lg px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            phx-click="delete_page"
+            phx-value-path={@pending_delete_path}
+            class="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </div>
+      </dialog>
     </div>
     """
   end

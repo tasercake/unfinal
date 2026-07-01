@@ -422,6 +422,185 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert updated_socket.assigns.revision == 0
   end
 
+  # ── Delete document tests ─────────────────────────────────────────────────────
+
+  test "namespace owner can delete a non-root document", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "my notes")
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    assert Documents.get("/alpha/notes").content == "my notes"
+
+    # Click the trash icon to show confirmation
+    html =
+      view
+      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    assert html =~ "Permanently delete"
+
+    # Confirm the deletion
+    {:error, {:live_redirect, %{to: redirect_to}}} =
+      view
+      |> element("button[phx-click='delete_page'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    assert redirect_to == "/n/alpha"
+
+    # Document is deleted from storage
+    assert Documents.get("/alpha/notes").content == ""
+    assert Documents.get("/alpha/notes").revision == 0
+
+    # Document is removed from page index
+    page_paths = Unfinal.PageIndex.list("alpha")
+    refute Enum.any?(page_paths, &(&1.path == "/notes"))
+  end
+
+  test "delete button is not shown to non-owner", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "other", "other@example.com")
+
+    {:ok, _view, html} = live(conn, "/n/alpha")
+
+    refute html =~ "confirm_delete"
+    refute html =~ "hero-trash-solid"
+  end
+
+  test "non-owner cannot delete another user's document" do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "private notes")
+
+    # Non-owner uses Documents.delete directly
+    assert {:error, :not_authorized} = Documents.delete("/alpha/notes", "other@example.com")
+    assert Documents.get("/alpha/notes").content == "private notes"
+  end
+
+  test "cannot delete namespace root document" do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha", "root content")
+
+    # Direct API call
+    assert {:error, :cannot_delete_root} = Documents.delete("/alpha", "owner@example.com")
+    assert Documents.get("/alpha").content == "root content"
+  end
+
+  test "root page in sidebar has no delete button for owner", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/", ~U[2026-06-23 00:00:00Z])
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, _view, html} = live(conn, "/n/alpha")
+
+    # Root link (/n/alpha) is rendered as a plain <a> without a delete button in the same element
+    # Non-root links have delete buttons - verify delete buttons exist for non-root pages
+    assert html =~ ~s(phx-click="confirm_delete")
+    assert html =~ ~s(phx-value-path="/n/alpha/notes")
+
+    # The root link does NOT appear in a div with confirm_delete; it's a plain <a>
+    # Parse and verify the root link is a standalone element, not inside a group
+    parsed = Floki.parse_document!(html)
+    root_links = Floki.find(parsed, "a[href='/n/alpha']")
+    assert length(root_links) >= 1
+    # Verify no confirm_delete button targets the root path
+    delete_buttons = Floki.find(parsed, "button[phx-value-path='/n/alpha']")
+    assert delete_buttons == []
+  end
+
+  test "can create a new document at the same path after deletion", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "original content")
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    # Delete: confirm_delete then delete_page
+    view
+    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    {:error, {:live_redirect, _}} =
+      view
+      |> element("button[phx-click='delete_page'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    assert_eventually(fn -> Documents.get("/alpha/notes").content == "" end)
+
+    # Create a new document at the same path
+    {:ok, new_view, _html} = live(conn, "/n/alpha/notes")
+    new_view |> form("form[phx-change=save]", %{content: "new content"}) |> render_change()
+
+    assert_eventually(fn -> Documents.get("/alpha/notes").content == "new content" end)
+  end
+
+  test "deleting current page redirects to namespace root", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "notes")
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha/notes")
+
+    view
+    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    {:error, {:live_redirect, %{to: redirect_to}}} =
+      view
+      |> element("button[phx-click='delete_page'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    assert redirect_to == "/n/alpha"
+  end
+
+  test "deleting a page from sidebar while viewing another page", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/home", "home")
+    save_document("/alpha/notes", "notes")
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha/home")
+
+    view
+    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    {:error, {:live_redirect, %{to: redirect_to}}} =
+      view
+      |> element("button[phx-click='delete_page'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    # Always redirects to namespace root after delete
+    assert redirect_to == "/n/alpha"
+    assert Documents.get("/alpha/notes").content == ""
+    assert Documents.get("/alpha/home").content == "home"
+  end
+
+  test "delete confirmation dialog shows page name and can be cancelled", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    # Click trash icon to show confirmation
+    html =
+      view
+      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    assert html =~ "Permanently delete"
+    assert html =~ "/alpha/notes"
+    assert html =~ ~s(phx-click="cancel_delete")
+    assert html =~ ~s(phx-click="delete_page")
+
+    # Cancel the dialog
+    html = view |> element("button[phx-click='cancel_delete']") |> render_click()
+    refute html =~ "Permanently delete"
+  end
+
   defp assert_eventually(fun, attempts \\ 20)
 
   defp assert_eventually(fun, attempts) when attempts > 0 do
