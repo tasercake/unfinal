@@ -304,6 +304,14 @@ fi
 
 # ── Phase 4: R2→SQLite backfill ────────────────────────────────────────────
 
+# Stop the running app first — the backfill mix task boots the full Phoenix
+# application (needed for Repo + S3 adapter), which would collide with the
+# already-listening production Endpoint on port 8000.
+if sudo systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+  log "stop ${SERVICE_NAME} for backfill (will restart at end)"
+  sudo systemctl stop "${SERVICE_NAME}.service"
+fi
+
 log "ensure migration reports directory"
 sudo install -d -m 0750 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${UNFINAL_DATA_DIR}/migration-reports"
 
