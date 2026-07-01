@@ -10,8 +10,6 @@ defmodule UnfinalWeb.EditorLiveTest do
   setup do
     Application.put_env(:unfinal, :storage_mode, :sqlite)
     Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
-    # Switch NamespaceStore to SQLite mode without restarting
-    :sys.replace_state(NamespaceStore, fn state -> %{state | sqlite_primary: true} end)
     SQLiteCleanup.clear_all()
     Documents.clear()
 
@@ -20,8 +18,6 @@ defmodule UnfinalWeb.EditorLiveTest do
       Documents.clear()
       Application.delete_env(:unfinal, :content_store_flush_interval_ms)
       Application.delete_env(:unfinal, :storage_mode)
-      # Switch NamespaceStore back to R2 mode
-      :sys.replace_state(NamespaceStore, fn state -> %{state | sqlite_primary: false} end)
     end)
 
     :ok

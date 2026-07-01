@@ -6,7 +6,6 @@ defmodule Unfinal.PageIndexTest do
   alias Unfinal.SQLiteCleanup
 
   setup do
-    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
     Application.put_env(:unfinal, :storage_mode, :sqlite)
     SQLiteCleanup.clear_all()
     PageIndex.clear()
@@ -65,18 +64,19 @@ defmodule Unfinal.PageIndexTest do
              PageIndex.upsert("testns", "no-leading-slash", ~U[2025-06-01 00:00:00Z])
   end
 
-  test "upsert writes only to SQLite, no R2 write occurs" do
+  test "upsert writes to SQLite and broadcasts" do
+    Phoenix.PubSub.subscribe(Unfinal.PubSub, PageIndex.topic("spy-ns"))
+
     assert :ok = PageIndex.upsert("spy-ns", "/page", ~U[2025-06-01 00:00:00Z])
 
     entries = PageIndex.list("spy-ns")
     assert length(entries) == 1
     assert hd(entries).path == "/page"
 
-    # Verify no R2 index was created
-    assert {:error, _} = Unfinal.ObjectIndex.get("indexes/namespaces/spy-ns.ndjson")
+    assert_receive {:page_index_updated, "spy-ns", _entries}, 1_000
   end
 
-  test "sqlite-only documents are visible via PageIndex list" do
+  test "SQLite documents ARE listed by PageIndex.list" do
     # Seed SQLite documents table directly
     now = DateTime.utc_now() |> DateTime.to_iso8601()
 
@@ -87,26 +87,5 @@ defmodule Unfinal.PageIndexTest do
 
     entries = PageIndex.list("alpha")
     assert Enum.any?(entries, fn e -> e.path == "/onlyinsqlite" end)
-  end
-
-  # -- NDJSON parsing helpers (used by archive migration) --
-
-  test "parse/1 handles valid and malformed ndjson lines" do
-    content =
-      "bad\n{\"path\":\"/\",\"updated_at\":\"2026-06-25T00:00:00Z\"}\n{\"path\":\"/ok\",\"updated_at\":\"2026-06-24T00:00:00Z\"}\n{}\n"
-
-    result = PageIndex.parse(content)
-
-    assert result == [
-             %{path: "/", updated_at: "2026-06-25T00:00:00Z"},
-             %{path: "/ok", updated_at: "2026-06-24T00:00:00Z"}
-           ]
-  end
-
-  # -- write/2 is now read-only --
-
-  test "write/2 returns r2_archive_read_only" do
-    assert {:error, :r2_archive_read_only} =
-             PageIndex.write("alpha", [%{path: "/", updated_at: "2025-01-01T00:00:00Z"}])
   end
 end

@@ -12,14 +12,8 @@ defmodule Unfinal.PageIndex do
 
   @spec list(String.t()) :: [entry()]
   def list(namespace) when is_binary(namespace) do
-    if valid_namespace?(namespace) do
-      case Application.get_env(:unfinal, :storage_mode, :r2) do
-        :sqlite ->
-          Unfinal.SqliteDocuments.list_namespace(namespace)
-
-        _ ->
-          server_call(namespace, :list)
-      end
+    if valid_namespace?(namespace) and storage_enabled?() do
+      Unfinal.SqliteDocuments.list_namespace(namespace)
     else
       []
     end
@@ -29,28 +23,26 @@ defmodule Unfinal.PageIndex do
   def upsert(namespace, path, %DateTime{} = updated_at)
       when is_binary(namespace) and is_binary(path) do
     if valid_namespace?(namespace) and DocumentPath.valid_relative_path?(path) do
-      case Application.get_env(:unfinal, :storage_mode, :r2) do
-        :sqlite ->
-          updated_at_iso = DateTime.to_iso8601(updated_at)
+      if storage_enabled?() do
+        updated_at_iso = DateTime.to_iso8601(updated_at)
 
-          case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso) do
-            :ok ->
-              entries = Unfinal.SqliteDocuments.list_namespace(namespace)
+        case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso) do
+          :ok ->
+            entries = Unfinal.SqliteDocuments.list_namespace(namespace)
 
-              Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(namespace), {
-                :page_index_updated,
-                namespace,
-                entries
-              })
+            Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(namespace), {
+              :page_index_updated,
+              namespace,
+              entries
+            })
 
-              :ok
+            :ok
 
-            {:error, reason} ->
-              {:error, reason}
-          end
-
-        _ ->
-          server_call(namespace, {:upsert, path, updated_at})
+          {:error, reason} ->
+            {:error, reason}
+        end
+      else
+        :ok
       end
     else
       {:error, :invalid}
@@ -59,75 +51,10 @@ defmodule Unfinal.PageIndex do
 
   @spec clear() :: :ok
   def clear do
-    try do
-      Unfinal.PageIndexSupervisor
-      |> DynamicSupervisor.which_children()
-      |> Enum.map(fn {_id, pid, _type, _modules} -> {pid, Process.monitor(pid)} end)
-      |> Enum.each(fn {pid, monitor_ref} ->
-        _result = DynamicSupervisor.terminate_child(Unfinal.PageIndexSupervisor, pid)
-        wait_for_down(monitor_ref)
-      end)
-    rescue
-      ArgumentError -> :ok
-    catch
-      :exit, {:noproc, _} -> :ok
-    end
-
     :ok
   end
 
-  @spec parse(String.t()) :: [entry()]
-  def parse(content) do
-    content
-    |> String.split(["\r\n", "\n", "\r"], trim: true)
-    |> Enum.flat_map(fn line ->
-      with {:ok, %{"path" => path, "updated_at" => updated_at}} <- Jason.decode(line),
-           true <- DocumentPath.valid_relative_path?(path),
-           {:ok, _dt, 0} <- DateTime.from_iso8601(updated_at) do
-        [%{path: path, updated_at: updated_at}]
-      else
-        _ -> []
-      end
-    end)
-    |> Enum.sort_by(& &1.updated_at, :desc)
-  end
-
-  @spec write(String.t(), [entry()]) :: {:error, :r2_archive_read_only}
-  def write(_namespace, _entries) do
-    {:error, :r2_archive_read_only}
-  end
-
-  @spec key(String.t()) :: String.t()
-  def key(namespace), do: "indexes/namespaces/#{namespace}.ndjson"
-
   defp valid_namespace?(namespace), do: DocumentPath.valid_segment?(namespace)
 
-  defp server_call(namespace, message) do
-    {:ok, pid} = server(namespace)
-    GenServer.call(pid, message)
-  end
-
-  defp server(namespace) do
-    case Registry.lookup(Unfinal.PageIndexRegistry, namespace) do
-      [{pid, _value}] ->
-        {:ok, pid}
-
-      [] ->
-        case DynamicSupervisor.start_child(
-               Unfinal.PageIndexSupervisor,
-               {Unfinal.PageIndexServer, namespace}
-             ) do
-          {:ok, pid} -> {:ok, pid}
-          {:error, {:already_started, pid}} -> {:ok, pid}
-        end
-    end
-  end
-
-  defp wait_for_down(monitor_ref) do
-    receive do
-      {:DOWN, ^monitor_ref, :process, _pid, _reason} -> :ok
-    after
-      5_000 -> :ok
-    end
-  end
+  defp storage_enabled?, do: Application.get_env(:unfinal, :storage_mode) == :sqlite
 end

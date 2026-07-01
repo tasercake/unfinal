@@ -57,11 +57,6 @@ defmodule Unfinal.S3ObjectStore do
     end
   end
 
-  @spec put_object(String.t(), String.t()) :: {:error, :r2_archive_read_only}
-  def put_object(_key, _content) do
-    {:error, :r2_archive_read_only}
-  end
-
   defp request(method, key, headers, body) do
     case Keyword.get(Application.get_env(:unfinal, :s3, []), :request_fun) do
       nil -> http_request(method, key, headers, body)

@@ -9,8 +9,6 @@ defmodule Unfinal.LegacyR2Archive do
   Not started under the supervision tree.
   """
 
-  alias Unfinal.S3ObjectStore
-
   @doc """
   Returns true when R2 archive reads are explicitly allowed by operator flag.
   """
@@ -21,28 +19,17 @@ defmodule Unfinal.LegacyR2Archive do
   end
 
   @doc """
-  Read a document from R2 archive. Returns `{:error, :r2_archive_read_disabled}`
-  when `allowed?/0` is false.
-  """
-  @spec get_document(String.t()) :: {:ok, map()} | {:error, term()}
-  def get_document(path) when is_binary(path) do
-    if allowed?() do
-      S3ObjectStore.get(path)
-    else
-      {:error, :r2_archive_read_disabled}
-    end
-  end
-
-  @doc """
   Read an object (index, etc.) from R2 archive. Returns
   `{:error, :r2_archive_read_disabled}` when `allowed?/0` is false.
   """
   @spec get_object(String.t()) :: {:ok, String.t()} | {:error, term()}
   def get_object(key) when is_binary(key) do
     if allowed?() do
-      S3ObjectStore.get_object(key)
+      adapter().get_object(key)
     else
       {:error, :r2_archive_read_disabled}
     end
   end
+
+  defp adapter, do: Application.get_env(:unfinal, :object_store_adapter, Unfinal.S3ObjectStore)
 end

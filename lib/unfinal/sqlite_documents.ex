@@ -91,27 +91,6 @@ defmodule Unfinal.SqliteDocuments do
   def put(_path, _content, _base_etag, _base_revision), do: {:error, :invalid_base}
 
   @doc """
-  Insert a document row from R2 fallback repair. ON CONFLICT DO NOTHING.
-  """
-  @spec insert_missing_from_r2(String.t(), Document.t()) :: :ok | {:error, term()}
-  def insert_missing_from_r2(path, %Document{} = doc) when is_binary(path) do
-    with {:ok, {ns, rel}} <- parts(path) do
-      iso = DateTime.to_iso8601(DateTime.utc_now())
-
-      sql =
-        "INSERT INTO documents(path, namespace, relative_path, content, revision, updated_at) " <>
-          "VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(path) DO NOTHING"
-
-      case query(sql, [path, ns, rel, doc.content, doc.revision, iso]) do
-        {:ok, _} -> :ok
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      :ignored -> :ok
-    end
-  end
-
-  @doc """
   Touch a page: insert placeholder with empty content if absent; update
   `updated_at` only when the target row is not already newer.
   """
@@ -156,20 +135,6 @@ defmodule Unfinal.SqliteDocuments do
 
       {:error, _} ->
         []
-    end
-  end
-
-  @doc """
-  Delete a document row by path. Returns `:ok` if deleted, `{:error, :not_found}` if absent.
-  """
-  @spec delete(String.t()) :: :ok | {:error, :not_found | term()}
-  def delete(path) when is_binary(path) do
-    sql = "DELETE FROM documents WHERE path = ?1"
-
-    case query(sql, [path]) do
-      {:ok, %{num_rows: 1}} -> :ok
-      {:ok, %{num_rows: 0}} -> {:error, :not_found}
-      {:error, reason} -> {:error, reason}
     end
   end
 

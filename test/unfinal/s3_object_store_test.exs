@@ -40,9 +40,4 @@ defmodule Unfinal.S3ObjectStoreTest do
     assert {:error, :r2_archive_read_only} =
              S3ObjectStore.delete("/notes", nil, 0)
   end
-
-  test "put_object returns {:error, :r2_archive_read_only}" do
-    assert {:error, :r2_archive_read_only} =
-             S3ObjectStore.put_object("indexes/test.ndjson", "content")
-  end
 end

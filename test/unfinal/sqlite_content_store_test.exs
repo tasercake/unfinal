@@ -5,11 +5,10 @@ defmodule Unfinal.SqliteContentStoreTest do
   alias Unfinal.ContentStore.Document
   alias Unfinal.SqliteContentStore
   alias Unfinal.SQLiteCleanup
-  alias Unfinal.StorageModeHelper
 
   setup do
     # Set SQLite-primary mode for these tests
-    StorageModeHelper.set_storage_mode!(:sqlite)
+    Application.put_env(:unfinal, :storage_mode, :sqlite)
 
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
     Unfinal.FakeObjectStore.ensure_started()
@@ -45,7 +44,7 @@ defmodule Unfinal.SqliteContentStoreTest do
     on_exit(fn ->
       SQLiteCleanup.clear_all()
       Unfinal.FakeObjectStore.clear()
-      StorageModeHelper.set_storage_mode!(:r2)
+      Application.put_env(:unfinal, :storage_mode, :r2)
 
       Application.put_env(:unfinal, :s3, original_s3)
     end)

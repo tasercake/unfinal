@@ -14,8 +14,7 @@ defmodule Unfinal.R2ToSQLiteBackfill do
   alias Unfinal.ContentStore
   alias Unfinal.ContentStore.Document
   alias Unfinal.DocumentPath
-  alias Unfinal.ObjectIndex
-  alias Unfinal.PageIndex
+  alias Unfinal.LegacyR2Archive
   alias Unfinal.Repo
 
   require Logger
@@ -73,7 +72,7 @@ defmodule Unfinal.R2ToSQLiteBackfill do
   # -- Step 1: Read namespace index --
 
   defp read_namespace_index(report) do
-    case ObjectIndex.get(@namespace_index_key) do
+    case LegacyR2Archive.get_object(@namespace_index_key) do
       {:ok, content} ->
         {valid_rows, invalid_rows} = parse_namespace_tsv(content)
 
@@ -134,9 +133,9 @@ defmodule Unfinal.R2ToSQLiteBackfill do
       Enum.reduce(namespace_rows, {[], [], [], []}, fn {namespace, _email},
                                                        {keys_read, keys_missing, entries,
                                                         entries_invalid} ->
-        page_key = PageIndex.key(namespace)
+        page_key = "indexes/namespaces/#{namespace}.ndjson"
 
-        case ObjectIndex.get(page_key) do
+        case LegacyR2Archive.get_object(page_key) do
           {:ok, content} ->
             {parsed_valid, parsed_invalid} = parse_page_ndjson(namespace, content)
 
