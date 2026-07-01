@@ -179,18 +179,23 @@ defmodule Unfinal.DocumentServer do
   defp write_content(path, content, base_etag, base_revision) do
     case ContentStore.adapter().put(path, content, base_etag, base_revision) do
       {:ok, %Document{} = doc} ->
-        case SQLiteShadow.upsert_document(doc, DateTime.utc_now()) do
-          :ok ->
-            {:ok, doc}
+        # Skip shadow write in SQLite-primary mode (already written by adapter)
+        unless Application.get_env(:unfinal, :storage_mode) == :sqlite_primary_r2_dual_write do
+          case SQLiteShadow.upsert_document(doc, DateTime.utc_now()) do
+            :ok ->
+              :ok
 
-          :ignored ->
-            {:ok, doc}
+            :ignored ->
+              :ok
 
-          {:error, reason} ->
-            Logger.warning("sqlite shadow document upsert failed for #{path}: #{inspect(reason)}")
-
-            {:ok, doc}
+            {:error, reason} ->
+              Logger.warning(
+                "sqlite shadow document upsert failed for #{path}: #{inspect(reason)}"
+              )
+          end
         end
+
+        {:ok, doc}
 
       other ->
         other

@@ -27,6 +27,34 @@ config :unfinal, :s3,
   secret_access_key: System.get_env("UNFINAL_S3_SECRET_ACCESS_KEY"),
   region: System.get_env("UNFINAL_S3_REGION", "auto")
 
+# Phase 5: Storage mode configuration
+storage_mode_str = System.get_env("UNFINAL_STORAGE_MODE", "r2_primary_sqlite_shadow")
+
+storage_mode =
+  case storage_mode_str do
+    "r2_primary_sqlite_shadow" ->
+      :r2_primary_sqlite_shadow
+
+    "sqlite_primary_r2_dual_write" ->
+      :sqlite_primary_r2_dual_write
+
+    "sqlite" ->
+      :sqlite
+
+    other ->
+      raise "invalid UNFINAL_STORAGE_MODE: #{inspect(other)}. Expected: r2_primary_sqlite_shadow | sqlite_primary_r2_dual_write | sqlite"
+  end
+
+config :unfinal, :storage_mode, storage_mode
+
+config :unfinal,
+       :r2_read_fallback,
+       System.get_env("UNFINAL_R2_READ_FALLBACK", "false") in ~w(true 1 yes)
+
+config :unfinal,
+       :r2_dual_write,
+       System.get_env("UNFINAL_R2_DUAL_WRITE", "false") in ~w(true 1 yes)
+
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

@@ -12,6 +12,17 @@ defmodule Unfinal.PageIndexServer do
   @initial_retry_ms 25
   @max_retry_ms 1_000
 
+  @doc """
+  Returns true if the application is running in Phase 5 SQLite-primary mode.
+
+  In Phase 5 mode, PageIndexServer must not be started (handled by Application
+  supervision tree) and must not perform R2 loads if called directly.
+  """
+  @spec sqlite_primary_mode?() :: boolean()
+  def sqlite_primary_mode? do
+    Application.get_env(:unfinal, :storage_mode) in [:sqlite_primary_r2_dual_write, :sqlite]
+  end
+
   def start_link(namespace) do
     GenServer.start_link(__MODULE__, namespace,
       name: {:via, Registry, {Unfinal.PageIndexRegistry, namespace}}
@@ -20,23 +31,44 @@ defmodule Unfinal.PageIndexServer do
 
   @impl true
   def init(namespace) do
-    task =
-      Task.Supervisor.async_nolink(Unfinal.PageIndexTaskSupervisor, fn -> load(namespace) end)
+    # In Phase 5 mode, skip R2 loads entirely. The server is kept only for
+    # backward compatibility; PageIndex.list/1 uses SQLite directly in Phase 5.
+    if sqlite_primary_mode?() do
+      {:ok,
+       %{
+         namespace: namespace,
+         entries: [],
+         loaded?: true,
+         dirty?: false,
+         flush_timer: nil,
+         flush_ref: nil,
+         load_ref: nil,
+         load_retry_timer: nil,
+         retry_ms: @initial_retry_ms,
+         change_id: 0,
+         flushing_change_id: nil
+       }}
+    else
+      task =
+        Task.Supervisor.async_nolink(Unfinal.PageIndexTaskSupervisor, fn ->
+          load(namespace)
+        end)
 
-    {:ok,
-     %{
-       namespace: namespace,
-       entries: [],
-       loaded?: false,
-       dirty?: false,
-       flush_timer: nil,
-       flush_ref: nil,
-       load_ref: task.ref,
-       load_retry_timer: nil,
-       retry_ms: @initial_retry_ms,
-       change_id: 0,
-       flushing_change_id: nil
-     }}
+      {:ok,
+       %{
+         namespace: namespace,
+         entries: [],
+         loaded?: false,
+         dirty?: false,
+         flush_timer: nil,
+         flush_ref: nil,
+         load_ref: task.ref,
+         load_retry_timer: nil,
+         retry_ms: @initial_retry_ms,
+         change_id: 0,
+         flushing_change_id: nil
+       }}
+    end
   end
 
   @impl true

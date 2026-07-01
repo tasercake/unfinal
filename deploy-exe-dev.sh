@@ -29,6 +29,21 @@ append_env_if_missing() {
   fi
 }
 
+force_env_value() {
+  local key=$1
+  local value=$2
+  local quoted_value
+  quoted_value=$(quote_env "${value}")
+
+  if sudo grep -Eq "^${key}=" "${ENV_FILE}"; then
+    sudo sed -i "s|^${key}=.*|${key}=${quoted_value}|" "${ENV_FILE}"
+    log "forced ${key}=${value} in ${ENV_FILE}"
+  else
+    printf '%s=%s\n' "${key}" "${quoted_value}" | sudo tee -a "${ENV_FILE}" >/dev/null
+    log "added ${key}=${value} to ${ENV_FILE}"
+  fi
+}
+
 quote_shell() {
   printf '%q' "$1"
 }
@@ -201,6 +216,14 @@ fi
 
 load_env_file
 
+# ── Phase 5: force cutover env flags ────────────────────────────────────────
+
+log "Phase 5: force cutover env flags"
+force_env_value "UNFINAL_STORAGE_MODE" "sqlite_primary_r2_dual_write"
+force_env_value "UNFINAL_R2_READ_FALLBACK" "true"
+force_env_value "UNFINAL_R2_DUAL_WRITE" "true"
+load_env_file
+
 log "fetch deps"
 mix deps.get --only prod
 
@@ -302,6 +325,28 @@ else
   exit 1
 fi
 
+# ── Phase 2: Litestream restore validation ─────────────────────────────────
+
+log "Litestream restore validation"
+temp_restore_dir=$(mktemp -d)
+trap 'rm -rf "${temp_restore_dir}"' EXIT
+
+if ! litestream restore -config "${LITESTREAM_CONFIG}" -o "${temp_restore_dir}/restore-check.db" "${UNFINAL_DATABASE_PATH}"; then
+  printf 'Litestream restore validation failed\n' >&2
+  rm -rf "${temp_restore_dir}"
+  exit 1
+fi
+
+integrity_result=$(sqlite3 "${temp_restore_dir}/restore-check.db" "PRAGMA integrity_check;")
+if [[ "${integrity_result}" != "ok" ]]; then
+  printf 'SQLite integrity check failed: %s\n' "${integrity_result}" >&2
+  rm -rf "${temp_restore_dir}"
+  exit 1
+fi
+
+rm -rf "${temp_restore_dir}"
+log "Litestream restore validation passed (integrity_check ok)"
+
 # ── Phase 4: R2→SQLite backfill ────────────────────────────────────────────
 
 # Stop the running app first — the backfill mix task boots the full Phoenix
@@ -318,6 +363,11 @@ sudo install -d -m 0750 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${UNFINAL_DATA_
 log "backfill R2 into SQLite"
 report_path="${UNFINAL_DATA_DIR}/migration-reports/r2-to-sqlite-$(date -u +%Y%m%dT%H%M%SZ).json"
 mix unfinal.migrate_r2_to_sqlite --commit --report "${report_path}"
+
+# ── Phase 5: cutover verification ───────────────────────────────────────────
+
+log "Phase 5: cutover verification"
+mix unfinal.verify_sqlite_cutover
 
 # ── Phoenix app: write service + reload + restart ───────────────────────────
 

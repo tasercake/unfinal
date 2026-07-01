@@ -26,7 +26,8 @@ defmodule UnfinalWeb.SessionController do
 
   defp start_clerk_oauth(conn, return_to) do
     with {:ok, config} <- clerk_config(conn),
-         {:ok, %{url: url, session_params: session_params}} <- clerk_oauth().authorize_url(config),
+         {:ok, %{url: url, session_params: session_params}} <-
+           clerk_oauth().authorize_url(config),
          state when is_binary(state) <- oauth_state(session_params) do
       entry = %{
         session_params: session_params,

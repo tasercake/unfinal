@@ -13,14 +13,47 @@ defmodule Unfinal.PageIndex do
 
   @spec list(String.t()) :: [entry()]
   def list(namespace) when is_binary(namespace) do
-    if valid_namespace?(namespace), do: server_call(namespace, :list), else: []
+    if valid_namespace?(namespace) do
+      case Application.get_env(:unfinal, :storage_mode, :r2_primary_sqlite_shadow) do
+        mode when mode in [:sqlite_primary_r2_dual_write, :sqlite] ->
+          Unfinal.SqliteDocuments.list_namespace(namespace)
+
+        _ ->
+          server_call(namespace, :list)
+      end
+    else
+      []
+    end
   end
 
   @spec upsert(String.t(), String.t(), DateTime.t()) :: :ok | {:error, term()}
   def upsert(namespace, path, %DateTime{} = updated_at)
       when is_binary(namespace) and is_binary(path) do
     if valid_namespace?(namespace) and valid_relative_path?(path) do
-      server_call(namespace, {:upsert, path, updated_at})
+      case Application.get_env(:unfinal, :storage_mode, :r2_primary_sqlite_shadow) do
+        mode when mode in [:sqlite_primary_r2_dual_write, :sqlite] ->
+          updated_at_iso = DateTime.to_iso8601(updated_at)
+
+          case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso) do
+            :ok ->
+              entries = Unfinal.SqliteDocuments.list_namespace(namespace)
+              Unfinal.LegacyR2Mirror.mirror_page_index_async(namespace, entries)
+
+              Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(namespace), {
+                :page_index_updated,
+                namespace,
+                entries
+              })
+
+              :ok
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+
+        _ ->
+          server_call(namespace, {:upsert, path, updated_at})
+      end
     else
       {:error, :invalid}
     end
