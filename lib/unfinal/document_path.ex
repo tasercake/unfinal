@@ -16,4 +16,29 @@ defmodule Unfinal.DocumentPath do
     do: Enum.all?(segments, &valid_segment?/1)
 
   def valid_segments?(_segments), do: false
+
+  @doc """
+  Validates a relative document path (must start with "/").
+
+  Examples:
+      iex> valid_relative_path?("/")
+      true
+
+      iex> valid_relative_path?("/notes")
+      true
+
+      iex> valid_relative_path?("/my-page/draft")
+      true
+
+      iex> valid_relative_path?("no-leading-slash")
+      false
+  """
+  @spec valid_relative_path?(term()) :: boolean()
+  def valid_relative_path?("/"), do: true
+
+  def valid_relative_path?("/" <> rest) when rest != "" do
+    rest |> String.split("/") |> valid_segments?()
+  end
+
+  def valid_relative_path?(_path), do: false
 end

@@ -176,7 +176,7 @@ defmodule Unfinal.R2ToSQLiteBackfill do
       case Jason.decode(line) do
         {:ok, %{"path" => path, "updated_at" => updated_at}} ->
           cond do
-            not PageIndex.valid_relative_path?(path) ->
+            not DocumentPath.valid_relative_path?(path) ->
               {valid,
                [
                  %{namespace: namespace, line: line_number, reason: "invalid path", text: line}
@@ -596,7 +596,7 @@ defmodule Unfinal.R2ToSQLiteBackfill do
 
   defp initial_report do
     %{
-      "phase" => "phase-4-r2-to-sqlite-backfill-r2-primary",
+      "phase" => "r2-to-sqlite-backfill",
       "mode" => "dry_run",
       "started_at" => "",
       "finished_at" => "",

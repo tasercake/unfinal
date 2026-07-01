@@ -3,7 +3,7 @@ defmodule Unfinal.SqliteToR2ExportTest do
 
   alias Unfinal.ContentStore
   alias Unfinal.FakeObjectStore
-  alias Unfinal.LegacyR2Index
+  alias Unfinal.R2Index
   alias Unfinal.ObjectIndex
   alias Unfinal.SQLiteCleanup
 
@@ -54,7 +54,7 @@ defmodule Unfinal.SqliteToR2ExportTest do
 
     # Verify R2 has namespace index
     {:ok, content} = ObjectIndex.get("indexes/namespaces.txt")
-    claims = LegacyR2Index.parse_namespace_tsv(content)
+    claims = R2Index.parse_namespace_tsv(content)
     assert {"alpha", "alpha@example.com"} in claims
     assert {"beta", "beta@example.com"} in claims
   end
@@ -76,7 +76,7 @@ defmodule Unfinal.SqliteToR2ExportTest do
 
     # Verify R2 has page index
     {:ok, content} = ObjectIndex.get("indexes/namespaces/myns.ndjson")
-    entries = LegacyR2Index.parse_page_ndjson(content)
+    entries = R2Index.parse_page_ndjson(content)
     assert Enum.any?(entries, &(&1.path == "/page1"))
   end
 
@@ -117,7 +117,7 @@ defmodule Unfinal.SqliteToR2ExportTest do
 
     # Should still have correct data (no duplicates)
     {:ok, content} = ObjectIndex.get("indexes/namespaces.txt")
-    claims = LegacyR2Index.parse_namespace_tsv(content)
+    claims = R2Index.parse_namespace_tsv(content)
     assert length(claims) == 1
   end
 end

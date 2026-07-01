@@ -1,9 +1,9 @@
-defmodule Unfinal.LegacyR2Index do
+defmodule Unfinal.R2Index do
   @moduledoc """
-  Centralized legacy R2 index serialization and parsing.
+  Centralized R2 index serialization and parsing.
 
   Provides byte-compatible NDJSON (page index) and TSV (namespace index) formats
-  used by Phase 4 R2 reads, so that PageIndex and NamespaceStore can become SQLite
+  used by R2 storage reads, so that PageIndex and NamespaceStore can become SQLite
   facades without losing rollback mirrors.
 
   ## Formats
@@ -40,7 +40,6 @@ defmodule Unfinal.LegacyR2Index do
 
   Each line must be a JSON object with `path` and `updated_at` (valid ISO8601).
   Invalid lines are silently skipped. Results are sorted newest-first by `updated_at`.
-  Does not validate relative paths (use `parse_page_index/1` for strict parsing).
   """
   @spec parse_page_ndjson(String.t()) :: [page_entry()]
   def parse_page_ndjson(content) when is_binary(content) do
@@ -53,29 +52,6 @@ defmodule Unfinal.LegacyR2Index do
 
         _ ->
           []
-      end
-    end)
-    |> Enum.sort_by(& &1.updated_at, :desc)
-  end
-
-  @doc """
-  Parse NDJSON page index content into a list of entries.
-
-  Each line must be a JSON object with `path` (valid relative path) and
-  `updated_at` (valid ISO8601). Invalid lines are silently skipped.
-  Results are sorted newest-first by `updated_at`.
-  """
-  @spec parse_page_index(String.t()) :: [page_entry()]
-  def parse_page_index(content) when is_binary(content) do
-    content
-    |> String.split(["\r\n", "\n", "\r"], trim: true)
-    |> Enum.flat_map(fn line ->
-      with {:ok, %{"path" => path, "updated_at" => updated_at}} <- Jason.decode(line),
-           true <- valid_relative_path?(path),
-           {:ok, _dt, 0} <- DateTime.from_iso8601(updated_at) do
-        [%{path: path, updated_at: updated_at}]
-      else
-        _ -> []
       end
     end)
     |> Enum.sort_by(& &1.updated_at, :desc)
@@ -103,7 +79,7 @@ defmodule Unfinal.LegacyR2Index do
 
   Each line is `namespace<TAB>email\n`, sorted alphabetically by namespace.
   Accepts either a map `%{namespace => %{email: email}}` or a list of
-  `{namespace, email}` tuples (Phase 5 export/task convenience).
+  `{namespace, email}` tuples (export/task convenience).
   """
   @spec serialize_namespace_index(map() | [{String.t(), String.t()}]) :: String.t()
   def serialize_namespace_index(claims) when is_list(claims) do
@@ -139,23 +115,6 @@ defmodule Unfinal.LegacyR2Index do
   end
 
   @doc """
-  Parse TSV namespace index content into a claims map.
-
-  Returns `%{namespace => %{email: email}}`. Invalid lines are silently skipped.
-  """
-  @spec parse_namespace_index(String.t()) :: %{String.t() => %{email: String.t()}}
-  def parse_namespace_index(content) when is_binary(content) do
-    content
-    |> String.split(["\r\n", "\n", "\r"], trim: true)
-    |> Enum.reduce(%{}, fn line, acc ->
-      case String.split(line, "\t", parts: 3) do
-        [namespace, email] -> Map.put(acc, namespace, %{email: email})
-        _parts -> acc
-      end
-    end)
-  end
-
-  @doc """
   Write namespace index TSV to R2 via ObjectIndex.
   """
   @spec write_namespace_index(%{String.t() => %{email: String.t()}}) :: :ok | {:error, term()}
@@ -169,14 +128,4 @@ defmodule Unfinal.LegacyR2Index do
   """
   @spec namespace_index_key() :: String.t()
   def namespace_index_key, do: "indexes/namespaces.txt"
-
-  # ─── Private Helpers ───
-
-  defp valid_relative_path?("/"), do: true
-
-  defp valid_relative_path?("/" <> rest) when rest != "" do
-    rest |> String.split("/") |> Unfinal.DocumentPath.valid_segments?()
-  end
-
-  defp valid_relative_path?(_path), do: false
 end

@@ -180,7 +180,7 @@ defmodule Unfinal.DocumentServer do
     case ContentStore.adapter().put(path, content, base_etag, base_revision) do
       {:ok, %Document{} = doc} ->
         # Skip shadow write in SQLite-primary mode (already written by adapter)
-        unless Application.get_env(:unfinal, :storage_mode) == :sqlite_primary_r2_dual_write do
+        unless Application.get_env(:unfinal, :storage_mode) == :sqlite do
           case SQLiteShadow.upsert_document(doc, DateTime.utc_now()) do
             :ok ->
               :ok

@@ -1,7 +1,7 @@
 defmodule Unfinal.NamespaceStore do
   @moduledoc """
-  Namespace ownership store. In Phase 5 mode, SQLite is primary.
-  In earlier modes, backed by R2 indexes/namespaces.txt.
+  Namespace ownership store. In SQLite-primary mode, SQLite is primary.
+  In R2 mode, backed by R2 indexes/namespaces.txt.
   """
 
   use GenServer
@@ -52,13 +52,12 @@ defmodule Unfinal.NamespaceStore do
 
   @impl true
   def init(_state) do
-    sqlite_primary =
-      Application.get_env(:unfinal, :storage_mode) in [:sqlite_primary_r2_dual_write, :sqlite]
+    sqlite_primary = Application.get_env(:unfinal, :storage_mode) == :sqlite
 
     {:ok, %{sqlite_primary: sqlite_primary, r2_state: %{}}}
   end
 
-  # ── Phase 5: SQLite primary claim ───────────────────────────────────────
+  # ── SQLite primary claim ───────────────────────────────────────────────────
 
   @impl true
   def handle_call({:claim, namespace, email}, _from, %{sqlite_primary: true} = state) do
@@ -189,7 +188,7 @@ defmodule Unfinal.NamespaceStore do
     {:reply, :ok, %{state | r2_state: %{}}}
   end
 
-  # -- Private R2 helpers (only used in non-Phase-5 mode) --
+  # -- Private R2 helpers (only used in R2 mode) --
 
   defp reload_r2 do
     case Unfinal.ObjectIndex.get(@index_key) do
@@ -225,7 +224,7 @@ defmodule Unfinal.NamespaceStore do
     case repo_query("SELECT namespace, email FROM namespace_claims ORDER BY namespace", []) do
       {:ok, %{rows: rows}} ->
         claims = Map.new(rows, fn [ns, email] -> {ns, %{email: email}} end)
-        Unfinal.LegacyR2Mirror.mirror_namespace_index_async(claims)
+        Unfinal.R2Mirror.mirror_namespace_index_async(claims)
 
       {:error, reason} ->
         Logger.warning("failed to read namespace claims for R2 mirror: #{inspect(reason)}")

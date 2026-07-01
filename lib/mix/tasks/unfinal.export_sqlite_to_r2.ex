@@ -1,11 +1,11 @@
 defmodule Mix.Tasks.Unfinal.ExportSqliteToR2 do
-  @shortdoc "Export SQLite data to R2 for Phase 4 rollback readiness"
+  @shortdoc "Export SQLite data to R2 for rollback readiness"
   @moduledoc """
   Idempotent rollback-readiness task. Reads SQLite as source of truth and
-  writes Phase 4-compatible R2 artifacts: document objects, per-namespace
-  NDJSON page indexes, and indexes/namespaces.txt.
+  writes R2-compatible artifacts: document objects, per-namespace NDJSON page
+  indexes, and indexes/namespaces.txt.
 
-  Run before planned rollback to Phase 4:
+  Run before planned R2-primary rollback:
 
       MIX_ENV=prod mix unfinal.export_sqlite_to_r2
 
@@ -15,7 +15,7 @@ defmodule Mix.Tasks.Unfinal.ExportSqliteToR2 do
   use Mix.Task
   require Logger
 
-  alias Unfinal.LegacyR2Index
+  alias Unfinal.R2Index
   alias Unfinal.SqliteDocuments
   alias Unfinal.S3ObjectStore
   alias Unfinal.Repo
@@ -47,9 +47,9 @@ defmodule Mix.Tasks.Unfinal.ExportSqliteToR2 do
     case Repo.query(sql, [], timeout: 5_000) do
       {:ok, %{rows: rows}} ->
         claims = Enum.map(rows, fn [ns, email] -> {ns, email} end)
-        content = LegacyR2Index.serialize_namespace_index(claims)
+        content = R2Index.serialize_namespace_index(claims)
 
-        case S3ObjectStore.put_object(LegacyR2Index.namespace_index_key(), content) do
+        case S3ObjectStore.put_object(R2Index.namespace_index_key(), content) do
           :ok ->
             IO.puts("  Namespace index exported: #{length(claims)} claims")
             {:ok, length(claims)}
@@ -88,8 +88,8 @@ defmodule Mix.Tasks.Unfinal.ExportSqliteToR2 do
     entries = SqliteDocuments.list_namespace(namespace)
 
     # Write page index NDJSON
-    page_content = LegacyR2Index.serialize_page_index(entries)
-    page_key = LegacyR2Index.page_index_key(namespace)
+    page_content = R2Index.serialize_page_index(entries)
+    page_key = R2Index.page_index_key(namespace)
 
     case S3ObjectStore.put_object(page_key, page_content) do
       :ok ->

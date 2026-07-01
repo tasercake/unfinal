@@ -8,8 +8,8 @@ defmodule Unfinal.SqliteContentStoreTest do
   alias Unfinal.StorageModeHelper
 
   setup do
-    # Set Phase 5 mode for these tests
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+    # Set SQLite-primary mode for these tests
+    StorageModeHelper.set_storage_mode!(:sqlite)
     StorageModeHelper.set_r2_read_fallback!(true)
     StorageModeHelper.set_r2_dual_write!(false)
     Application.put_env(:unfinal, :object_store_adapter, Unfinal.FakeObjectStore)
@@ -46,7 +46,7 @@ defmodule Unfinal.SqliteContentStoreTest do
     on_exit(fn ->
       SQLiteCleanup.clear_all()
       Unfinal.FakeObjectStore.clear()
-      StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+      StorageModeHelper.set_storage_mode!(:r2)
       StorageModeHelper.set_r2_read_fallback!(false)
       StorageModeHelper.set_r2_dual_write!(false)
       Application.put_env(:unfinal, :s3, original_s3)
@@ -71,7 +71,7 @@ defmodule Unfinal.SqliteContentStoreTest do
   end
 
   test "SQLite miss + R2 present repairs SQLite with insert-if-absent" do
-    # Write to R2 only (simulating Phase 4 data)
+    # Write to R2 only (simulating pre-migration data)
     # Store the document content at the S3 object key for the request_fun bridge
     key = ContentStore.object_key("/r2-doc")
     Unfinal.FakeObjectStore.put_object(key, "r2 content")

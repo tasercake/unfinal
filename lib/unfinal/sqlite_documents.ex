@@ -165,15 +165,6 @@ defmodule Unfinal.SqliteDocuments do
     end
   end
 
-  @doc "Count document rows in a namespace."
-  @spec count_namespace_documents(String.t()) :: non_neg_integer()
-  def count_namespace_documents(namespace) when is_binary(namespace) do
-    case query("SELECT COUNT(*) FROM documents WHERE namespace = ?1", [namespace]) do
-      {:ok, %{rows: [[n]]}} -> n
-      _ -> 0
-    end
-  end
-
   @doc "Return paths from the given list that are absent from SQLite."
   @spec missing_paths([String.t()]) :: [String.t()]
   def missing_paths([]), do: []
@@ -233,7 +224,7 @@ defmodule Unfinal.SqliteDocuments do
         frel = "/" <> rel
 
         if Unfinal.DocumentPath.valid_segment?(ns) and
-             Unfinal.PageIndex.valid_relative_path?(frel),
+             Unfinal.DocumentPath.valid_relative_path?(frel),
            do: {:ok, {ns, frel}},
            else: :ignored
 

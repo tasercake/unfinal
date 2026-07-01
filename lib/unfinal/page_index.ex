@@ -14,8 +14,8 @@ defmodule Unfinal.PageIndex do
   @spec list(String.t()) :: [entry()]
   def list(namespace) when is_binary(namespace) do
     if valid_namespace?(namespace) do
-      case Application.get_env(:unfinal, :storage_mode, :r2_primary_sqlite_shadow) do
-        mode when mode in [:sqlite_primary_r2_dual_write, :sqlite] ->
+      case Application.get_env(:unfinal, :storage_mode, :r2) do
+        :sqlite ->
           Unfinal.SqliteDocuments.list_namespace(namespace)
 
         _ ->
@@ -29,15 +29,15 @@ defmodule Unfinal.PageIndex do
   @spec upsert(String.t(), String.t(), DateTime.t()) :: :ok | {:error, term()}
   def upsert(namespace, path, %DateTime{} = updated_at)
       when is_binary(namespace) and is_binary(path) do
-    if valid_namespace?(namespace) and valid_relative_path?(path) do
-      case Application.get_env(:unfinal, :storage_mode, :r2_primary_sqlite_shadow) do
-        mode when mode in [:sqlite_primary_r2_dual_write, :sqlite] ->
+    if valid_namespace?(namespace) and DocumentPath.valid_relative_path?(path) do
+      case Application.get_env(:unfinal, :storage_mode, :r2) do
+        :sqlite ->
           updated_at_iso = DateTime.to_iso8601(updated_at)
 
           case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso) do
             :ok ->
               entries = Unfinal.SqliteDocuments.list_namespace(namespace)
-              Unfinal.LegacyR2Mirror.mirror_page_index_async(namespace, entries)
+              Unfinal.R2Mirror.mirror_page_index_async(namespace, entries)
 
               Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(namespace), {
                 :page_index_updated,
@@ -78,7 +78,7 @@ defmodule Unfinal.PageIndex do
     |> String.split(["\r\n", "\n", "\r"], trim: true)
     |> Enum.flat_map(fn line ->
       with {:ok, %{"path" => path, "updated_at" => updated_at}} <- Jason.decode(line),
-           true <- valid_relative_path?(path),
+           true <- DocumentPath.valid_relative_path?(path),
            {:ok, _dt, 0} <- DateTime.from_iso8601(updated_at) do
         [%{path: path, updated_at: updated_at}]
       else
@@ -102,15 +102,6 @@ defmodule Unfinal.PageIndex do
 
   @spec key(String.t()) :: String.t()
   def key(namespace), do: "indexes/namespaces/#{namespace}.ndjson"
-
-  @spec valid_relative_path?(term()) :: boolean()
-  def valid_relative_path?("/"), do: true
-
-  def valid_relative_path?("/" <> rest) when rest != "" do
-    rest |> String.split("/") |> DocumentPath.valid_segments?()
-  end
-
-  def valid_relative_path?(_path), do: false
 
   defp valid_namespace?(namespace), do: DocumentPath.valid_segment?(namespace)
 

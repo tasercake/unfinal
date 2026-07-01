@@ -20,9 +20,9 @@ config :phoenix_live_view,
 config :unfinal, :object_store_adapter, Unfinal.FakeObjectStore
 
 # Default test storage mode is R2-primary (fake); individual tests can
-# override via Application.put_env(:unfinal, :storage_mode, :sqlite_primary_r2_dual_write)
+# override via Application.put_env(:unfinal, :storage_mode, :sqlite)
 # and restore on exit.
-config :unfinal, :storage_mode, :r2_primary_sqlite_shadow
+config :unfinal, :storage_mode, :r2
 config :unfinal, :r2_read_fallback, false
 config :unfinal, :r2_dual_write, false
 

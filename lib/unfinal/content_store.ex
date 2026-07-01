@@ -44,8 +44,7 @@ defmodule Unfinal.ContentStore do
 
   @spec adapter() :: module()
   def adapter do
-    case Application.get_env(:unfinal, :storage_mode, :r2_primary_sqlite_shadow) do
-      :sqlite_primary_r2_dual_write -> Unfinal.SqliteContentStore
+    case Application.get_env(:unfinal, :storage_mode, :r2) do
       :sqlite -> Unfinal.SqliteContentStore
       _ -> Application.get_env(:unfinal, :object_store_adapter, Unfinal.S3ObjectStore)
     end

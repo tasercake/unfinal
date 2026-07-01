@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.Unfinal.VerifySqliteCutover do
-  @shortdoc "Verify SQLite cutover completeness before Phase 5 deploy"
+  @shortdoc "Verify SQLite cutover completeness before deploy"
   @moduledoc """
   Deploy verification task that checks SQLite has all R2-indexed data.
 
@@ -13,7 +13,7 @@ defmodule Mix.Tasks.Unfinal.VerifySqliteCutover do
   use Mix.Task
   require Logger
 
-  alias Unfinal.LegacyR2Index
+  alias Unfinal.R2Index
   alias Unfinal.ObjectIndex
   alias Unfinal.SqliteDocuments
   alias Unfinal.Repo
@@ -43,9 +43,9 @@ defmodule Mix.Tasks.Unfinal.VerifySqliteCutover do
   end
 
   defp verify_namespace_claims do
-    case ObjectIndex.get(LegacyR2Index.namespace_index_key()) do
+    case ObjectIndex.get(R2Index.namespace_index_key()) do
       {:ok, content} ->
-        r2_claims = LegacyR2Index.parse_namespace_tsv(content)
+        r2_claims = R2Index.parse_namespace_tsv(content)
         IO.puts("R2 namespace claims: #{length(r2_claims)}")
 
         Enum.each(r2_claims, fn {namespace, email} ->
@@ -80,17 +80,17 @@ defmodule Mix.Tasks.Unfinal.VerifySqliteCutover do
   end
 
   defp verify_indexed_documents do
-    case ObjectIndex.get(LegacyR2Index.namespace_index_key()) do
+    case ObjectIndex.get(R2Index.namespace_index_key()) do
       {:ok, content} ->
-        r2_claims = LegacyR2Index.parse_namespace_tsv(content)
+        r2_claims = R2Index.parse_namespace_tsv(content)
 
         {total_docs, missing_docs} =
           Enum.reduce(r2_claims, {0, []}, fn {namespace, _email}, {total, missing} ->
-            page_key = LegacyR2Index.page_index_key(namespace)
+            page_key = R2Index.page_index_key(namespace)
 
             case ObjectIndex.get(page_key) do
               {:ok, page_content} ->
-                entries = LegacyR2Index.parse_page_ndjson(page_content)
+                entries = R2Index.parse_page_ndjson(page_content)
 
                 Enum.reduce(entries, {total, missing}, fn entry, {t, m} ->
                   full_path = reconstruct_full_path(namespace, entry.path)

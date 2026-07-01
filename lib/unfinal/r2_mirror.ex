@@ -1,10 +1,10 @@
-defmodule Unfinal.LegacyR2Mirror do
+defmodule Unfinal.R2Mirror do
   @moduledoc """
-  Best-effort async R2 mirroring for Phase 5 rollback safety.
+  Best-effort async R2 mirroring for rollback safety.
 
   After each successful SQLite primary write, callers start a supervised async
-  task via this module to mirror the affected legacy R2 artifacts (document
-  objects, page NDJSON indexes, namespace TSV index).
+  task via this module to mirror the affected R2 artifacts (document objects,
+  page NDJSON indexes, namespace TSV index).
 
   Failures are logged with path/namespace context but never fail the SQLite
   write. Rollback readiness is established by running the idempotent
@@ -16,7 +16,7 @@ defmodule Unfinal.LegacyR2Mirror do
 
   require Logger
 
-  alias Unfinal.LegacyR2Index
+  alias Unfinal.R2Index
   alias Unfinal.S3ObjectStore
 
   @doc """
@@ -67,7 +67,7 @@ defmodule Unfinal.LegacyR2Mirror do
     if r2_dual_write? do
       _ref =
         Task.Supervisor.async_nolink(Unfinal.DocumentTaskSupervisor, fn ->
-          case LegacyR2Index.write_page_index(namespace, entries) do
+          case R2Index.write_page_index(namespace, entries) do
             :ok ->
               :ok
 
@@ -97,7 +97,7 @@ defmodule Unfinal.LegacyR2Mirror do
     if r2_dual_write? do
       _ref =
         Task.Supervisor.async_nolink(Unfinal.DocumentTaskSupervisor, fn ->
-          case LegacyR2Index.write_namespace_index(claims) do
+          case R2Index.write_namespace_index(claims) do
             :ok ->
               :ok
 

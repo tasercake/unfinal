@@ -32,7 +32,6 @@ defmodule Unfinal.BlockingIndexObjectStore do
   def block_get_object(block?), do: Agent.update(__MODULE__, &%{&1 | block_get_object?: block?})
   def block_put_object(block?), do: Agent.update(__MODULE__, &%{&1 | block_put_object?: block?})
   def reset, do: Agent.update(__MODULE__, fn _state -> initial_state(self()) end)
-  def put_object_calls, do: Agent.get(__MODULE__, & &1.put_object_calls)
 
   def release do
     waiters = Agent.get_and_update(__MODULE__, &{&1.waiters, %{&1 | waiters: []}})

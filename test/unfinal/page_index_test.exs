@@ -150,10 +150,10 @@ defmodule Unfinal.PageIndexTest do
     assert PageIndex.list("alpha") == []
   end
 
-  # -- Phase 5 SQLite-primary mode tests --
+  # -- SQLite-primary mode tests --
 
-  test "list reads from SQLite in Phase 5 mode" do
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+  test "list reads from SQLite in SQLite-primary mode" do
+    StorageModeHelper.set_storage_mode!(:sqlite)
 
     # Insert document directly into SQLite
     Unfinal.Repo.query(
@@ -165,18 +165,18 @@ defmodule Unfinal.PageIndexTest do
     assert length(entries) == 1
     assert hd(entries).path == "/page1"
   after
-    StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+    StorageModeHelper.set_storage_mode!(:r2)
   end
 
-  test "list returns empty for invalid namespace in Phase 5 mode" do
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+  test "list returns empty for invalid namespace in SQLite-primary mode" do
+    StorageModeHelper.set_storage_mode!(:sqlite)
     assert Unfinal.PageIndex.list("Invalid-Namespace") == []
   after
-    StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+    StorageModeHelper.set_storage_mode!(:r2)
   end
 
-  test "upsert writes to SQLite and triggers R2 mirror in Phase 5 mode" do
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+  test "upsert writes to SQLite and triggers R2 mirror in SQLite-primary mode" do
+    StorageModeHelper.set_storage_mode!(:sqlite)
     StorageModeHelper.set_r2_dual_write!(false)
 
     assert :ok = Unfinal.PageIndex.upsert("testns", "/", ~U[2025-06-01 00:00:00Z])
@@ -185,17 +185,17 @@ defmodule Unfinal.PageIndexTest do
     assert length(entries) == 1
     assert hd(entries).path == "/"
   after
-    StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+    StorageModeHelper.set_storage_mode!(:r2)
     StorageModeHelper.set_r2_dual_write!(false)
   end
 
-  test "upsert returns error for invalid path in Phase 5 mode" do
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+  test "upsert returns error for invalid path in SQLite-primary mode" do
+    StorageModeHelper.set_storage_mode!(:sqlite)
 
     assert {:error, :invalid} =
              Unfinal.PageIndex.upsert("testns", "no-leading-slash", ~U[2025-06-01 00:00:00Z])
   after
-    StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+    StorageModeHelper.set_storage_mode!(:r2)
   end
 
   defp eventually(fun, attempts \\ 50)

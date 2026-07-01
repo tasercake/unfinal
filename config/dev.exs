@@ -52,9 +52,6 @@ config :unfinal, UnfinalWeb.Endpoint,
     ]
   ]
 
-# Enable dev routes for dashboard and mailbox
-config :unfinal, dev_routes: true
-
 config :unfinal, :object_store_adapter, Unfinal.FilesystemObjectStore
 config :unfinal, :filesystem_object_store, write_delay_ms: 1000
 

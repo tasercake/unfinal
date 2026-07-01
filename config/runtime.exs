@@ -27,22 +27,19 @@ config :unfinal, :s3,
   secret_access_key: System.get_env("UNFINAL_S3_SECRET_ACCESS_KEY"),
   region: System.get_env("UNFINAL_S3_REGION", "auto")
 
-# Phase 5: Storage mode configuration
-storage_mode_str = System.get_env("UNFINAL_STORAGE_MODE", "r2_primary_sqlite_shadow")
+# Storage mode configuration
+storage_mode_str = System.get_env("UNFINAL_STORAGE_MODE", "r2")
 
 storage_mode =
   case storage_mode_str do
-    "r2_primary_sqlite_shadow" ->
-      :r2_primary_sqlite_shadow
-
-    "sqlite_primary_r2_dual_write" ->
-      :sqlite_primary_r2_dual_write
+    "r2" ->
+      :r2
 
     "sqlite" ->
       :sqlite
 
     other ->
-      raise "invalid UNFINAL_STORAGE_MODE: #{inspect(other)}. Expected: r2_primary_sqlite_shadow | sqlite_primary_r2_dual_write | sqlite"
+      raise "invalid UNFINAL_STORAGE_MODE: #{inspect(other)}. Expected: r2 | sqlite"
   end
 
 config :unfinal, :storage_mode, storage_mode

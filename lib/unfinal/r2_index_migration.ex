@@ -159,7 +159,7 @@ defmodule Unfinal.R2IndexMigration do
   defp parse_manifest_line(line, line_number) do
     case String.split(line, "\t", parts: 3) do
       [namespace, path] ->
-        if DocumentPath.valid_segment?(namespace) and valid_relative_path?(path) do
+        if DocumentPath.valid_segment?(namespace) and DocumentPath.valid_relative_path?(path) do
           {:ok, namespace, path}
         else
           {:error, {:invalid_manifest_row, line_number}}
@@ -169,13 +169,4 @@ defmodule Unfinal.R2IndexMigration do
         {:error, {:invalid_manifest_row, line_number}}
     end
   end
-
-  @spec valid_relative_path?(term()) :: boolean()
-  defp valid_relative_path?("/"), do: true
-
-  defp valid_relative_path?("/" <> rest) when rest != "" do
-    rest |> String.split("/") |> DocumentPath.valid_segments?()
-  end
-
-  defp valid_relative_path?(_path), do: false
 end

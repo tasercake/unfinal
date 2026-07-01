@@ -134,7 +134,7 @@ defmodule Unfinal.SQLiteShadow do
         full_relative = "/" <> relative
 
         if Unfinal.DocumentPath.valid_segment?(namespace) and
-             Unfinal.PageIndex.valid_relative_path?(full_relative),
+             Unfinal.DocumentPath.valid_relative_path?(full_relative),
            do: {namespace, full_relative},
            else: :ignored
 

@@ -152,7 +152,7 @@ ENV_DIR=${ENV_DIR:-/etc/${SERVICE_NAME}}
 ENV_FILE=${ENV_FILE:-${ENV_DIR}/${SERVICE_NAME}.env}
 SERVICE_FILE=${SERVICE_FILE:-/etc/systemd/system/${SERVICE_NAME}.service}
 
-# Phase 2 Litestream variables
+# Litestream variables
 UNFINAL_DATABASE_PATH=${UNFINAL_DATABASE_PATH:-${UNFINAL_DATA_DIR}/unfinal.sqlite3}
 LITESTREAM_VERSION=${LITESTREAM_VERSION:-0.5.12}
 LITESTREAM_CONFIG=${LITESTREAM_CONFIG:-/etc/litestream/unfinal.yml}
@@ -216,10 +216,10 @@ fi
 
 load_env_file
 
-# ── Phase 5: force cutover env flags ────────────────────────────────────────
+# ── Force cutover env flags ───────────────────────────────────────────────────
 
-log "Phase 5: force cutover env flags"
-force_env_value "UNFINAL_STORAGE_MODE" "sqlite_primary_r2_dual_write"
+log "force cutover env flags"
+force_env_value "UNFINAL_STORAGE_MODE" "sqlite"
 force_env_value "UNFINAL_R2_READ_FALLBACK" "true"
 force_env_value "UNFINAL_R2_DUAL_WRITE" "true"
 load_env_file
@@ -233,7 +233,7 @@ mix compile
 log "build assets"
 mix assets.deploy
 
-# ── Phase 2: persistent DB directory + deploy-time Ecto migrations ──────────
+# ── Persistent DB directory + deploy-time Ecto migrations ────────────────────
 
 sqlite_dir=$(dirname "${UNFINAL_DATABASE_PATH}")
 log "ensure SQLite dir ${sqlite_dir}"
@@ -250,7 +250,7 @@ if [[ ! -s "${UNFINAL_DATABASE_PATH}" ]]; then
   exit 1
 fi
 
-# ── Phase 2: install Litestream + write config + start service ──────────────
+# ── Install Litestream + write config + start service ─────────────────────────
 
 install_tools_and_litestream
 
@@ -325,7 +325,7 @@ else
   exit 1
 fi
 
-# ── Phase 2: Litestream restore validation ─────────────────────────────────
+# ── Litestream restore validation ─────────────────────────────────────────────
 
 log "Litestream restore validation"
 temp_restore_dir=$(mktemp -d)
@@ -347,7 +347,7 @@ fi
 rm -rf "${temp_restore_dir}"
 log "Litestream restore validation passed (integrity_check ok)"
 
-# ── Phase 4: R2→SQLite backfill ────────────────────────────────────────────
+# ── R2→SQLite backfill ───────────────────────────────────────────────────────
 
 # Stop the running app first — the backfill mix task boots the full Phoenix
 # application (needed for Repo + S3 adapter), which would collide with the
@@ -364,9 +364,9 @@ log "backfill R2 into SQLite"
 report_path="${UNFINAL_DATA_DIR}/migration-reports/r2-to-sqlite-$(date -u +%Y%m%dT%H%M%SZ).json"
 mix unfinal.migrate_r2_to_sqlite --commit --report "${report_path}"
 
-# ── Phase 5: cutover verification ───────────────────────────────────────────
+# ── Cutover verification ─────────────────────────────────────────────────────
 
-log "Phase 5: cutover verification"
+log "cutover verification"
 mix unfinal.verify_sqlite_cutover
 
 # ── Phoenix app: write service + reload + restart ───────────────────────────

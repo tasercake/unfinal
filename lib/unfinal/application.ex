@@ -9,11 +9,11 @@ defmodule Unfinal.Application do
   def start(_type, _args) do
     Unfinal.Env.load_and_configure!()
 
-    # Phase 5 (SQLite primary): do NOT start PageIndexServer or its
+    # SQLite-primary mode: do NOT start PageIndexServer or its
     # supervisor/index registry. PageIndex is now a SQLite facade.
-    # PageIndexServer module is kept for Phase 7 deletion.
+    # PageIndexServer module is kept for future cleanup.
     page_index_children =
-      if Application.get_env(:unfinal, :storage_mode) == :sqlite_primary_r2_dual_write do
+      if Application.get_env(:unfinal, :storage_mode) == :sqlite do
         []
       else
         [

@@ -1,6 +1,6 @@
 defmodule Unfinal.SqliteContentStore do
   @moduledoc """
-  ContentStore adapter for Phase 5: SQLite primary + temporary R2 dual-write.
+  ContentStore adapter for SQLite-primary mode with temporary R2 dual-write.
 
   - Reads come from SQLite first; R2 read-fallback repairs missing SQLite rows
     (insert-if-absent only, never overwrites newer SQLite data).
@@ -14,7 +14,7 @@ defmodule Unfinal.SqliteContentStore do
 
   alias Unfinal.ContentStore
   alias Unfinal.ContentStore.Document
-  alias Unfinal.LegacyR2Mirror
+  alias Unfinal.R2Mirror
   alias Unfinal.S3ObjectStore
   alias Unfinal.SqliteDocuments
 
@@ -48,7 +48,7 @@ defmodule Unfinal.SqliteContentStore do
 
     case SqliteDocuments.put(normalized, content, base_etag, base_revision) do
       {:ok, %Document{} = doc} ->
-        LegacyR2Mirror.mirror_document_async(normalized, content)
+        R2Mirror.mirror_document_async(normalized, content)
         {:ok, doc}
 
       {:stale, %Document{} = doc} ->

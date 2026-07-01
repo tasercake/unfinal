@@ -13,14 +13,14 @@ defmodule Unfinal.PageIndexServer do
   @max_retry_ms 1_000
 
   @doc """
-  Returns true if the application is running in Phase 5 SQLite-primary mode.
+  Returns true if the application is running in SQLite-primary mode.
 
-  In Phase 5 mode, PageIndexServer must not be started (handled by Application
+  In SQLite-primary mode, PageIndexServer must not be started (handled by Application
   supervision tree) and must not perform R2 loads if called directly.
   """
   @spec sqlite_primary_mode?() :: boolean()
   def sqlite_primary_mode? do
-    Application.get_env(:unfinal, :storage_mode) in [:sqlite_primary_r2_dual_write, :sqlite]
+    Application.get_env(:unfinal, :storage_mode) == :sqlite
   end
 
   def start_link(namespace) do
@@ -31,8 +31,8 @@ defmodule Unfinal.PageIndexServer do
 
   @impl true
   def init(namespace) do
-    # In Phase 5 mode, skip R2 loads entirely. The server is kept only for
-    # backward compatibility; PageIndex.list/1 uses SQLite directly in Phase 5.
+    # In SQLite-primary mode, skip R2 loads entirely. The server is kept only for
+    # backward compatibility; PageIndex.list/1 uses SQLite directly.
     if sqlite_primary_mode?() do
       {:ok,
        %{

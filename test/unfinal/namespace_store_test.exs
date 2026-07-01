@@ -112,10 +112,10 @@ defmodule Unfinal.NamespaceStoreTest do
     assert NamespaceStore.owner("sqlite-only") == nil
   end
 
-  # -- Phase 5 SQLite-primary mode tests --
+  # -- SQLite-primary mode tests --
 
-  test "claim inserts into SQLite in Phase 5 mode" do
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+  test "claim inserts into SQLite in SQLite-primary mode" do
+    StorageModeHelper.set_storage_mode!(:sqlite)
 
     assert :ok = NamespaceStore.claim("sqlite-ns", %{"email" => "sqlite@example.com"})
 
@@ -131,41 +131,41 @@ defmodule Unfinal.NamespaceStoreTest do
     # Verify owner lookup works
     assert NamespaceStore.owner("sqlite-ns") == %{email: "sqlite@example.com"}
   after
-    StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+    StorageModeHelper.set_storage_mode!(:r2)
     Unfinal.Repo.query("DELETE FROM namespace_claims WHERE namespace = ?1", ["sqlite-ns"])
   end
 
-  test "duplicate namespace returns :taken in Phase 5 mode" do
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+  test "duplicate namespace returns :taken in SQLite-primary mode" do
+    StorageModeHelper.set_storage_mode!(:sqlite)
 
     assert :ok = NamespaceStore.claim("taken-ns", %{"email" => "first@example.com"})
     assert {:error, :taken} = NamespaceStore.claim("taken-ns", %{"email" => "second@example.com"})
   after
-    StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+    StorageModeHelper.set_storage_mode!(:r2)
     Unfinal.Repo.query("DELETE FROM namespace_claims WHERE namespace = ?1", ["taken-ns"])
   end
 
-  test "duplicate email returns :already_claimed in Phase 5 mode" do
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+  test "duplicate email returns :already_claimed in SQLite-primary mode" do
+    StorageModeHelper.set_storage_mode!(:sqlite)
 
     assert :ok = NamespaceStore.claim("ns-a", %{"email" => "dup@example.com"})
 
     assert {:error, :already_claimed} =
              NamespaceStore.claim("ns-b", %{"email" => "dup@example.com"})
   after
-    StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+    StorageModeHelper.set_storage_mode!(:r2)
     Unfinal.Repo.query("DELETE FROM namespace_claims WHERE namespace = ?1", ["ns-a"])
     Unfinal.Repo.query("DELETE FROM namespace_claims WHERE namespace = ?1", ["ns-b"])
   end
 
-  test "namespace_for_email queries SQLite in Phase 5 mode" do
-    StorageModeHelper.set_storage_mode!(:sqlite_primary_r2_dual_write)
+  test "namespace_for_email queries SQLite in SQLite-primary mode" do
+    StorageModeHelper.set_storage_mode!(:sqlite)
 
     assert :ok = NamespaceStore.claim("email-ns", %{"email" => "findme@example.com"})
     assert NamespaceStore.namespace_for_email("findme@example.com") == "email-ns"
     assert NamespaceStore.namespace_for_email("notfound@example.com") == nil
   after
-    StorageModeHelper.set_storage_mode!(:r2_primary_sqlite_shadow)
+    StorageModeHelper.set_storage_mode!(:r2)
     Unfinal.Repo.query("DELETE FROM namespace_claims WHERE namespace = ?1", ["email-ns"])
   end
 end
