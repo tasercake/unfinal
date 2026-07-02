@@ -25,7 +25,7 @@ defmodule UnfinalWeb.EditorLive do
     writer? = writer?(segments, session, claimed_namespace)
 
     if connected?(socket) and writer?,
-      do: UnfinalWeb.Presence.track(self(), "editing", storage_path, %{path: storage_path})
+      do: UnfinalWeb.Presence.track(self(), "editing", storage_path, %{path: storage_path, joined_at: System.system_time(:second)})
 
     if connected?(socket) and not writer?,
       do: Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic(storage_path))
