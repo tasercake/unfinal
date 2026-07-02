@@ -35,9 +35,9 @@ defmodule Unfinal.MixProject do
       {:phoenix, "~> 1.7.21"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 1.0"},
-      {:floki, ">= 0.30.0", only: :test},
-      {:lazy_html, ">= 0.1.0", only: :test},
+      {:phoenix_live_view, "~> 1.2"},
+      {:floki, "~> 0.38", only: :test},
+      {:lazy_html, "~> 0.1", only: :test},
       {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.2.0", runtime: Mix.env() == :dev},
       {:heroicons,
@@ -57,7 +57,7 @@ defmodule Unfinal.MixProject do
       {:ssl_verify_fun, "~> 1.1"},
       {:certifi, "~> 2.15"},
       {:dns_cluster, "~> 0.1.1"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.12"}
     ]
   end
 

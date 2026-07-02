@@ -120,6 +120,19 @@ install_tools_and_litestream() {
   tmpdir=$(mktemp -d)
 
   curl -fsSL -o "${tmpdir}/${deb_name}" "${deb_url}"
+
+  # Verify checksum
+  expected_sha256=$(case "${deb_arch}" in
+    amd64) echo "939cb373025f4e08b7872c5674687615a9b0b33f4b64e503d1b0b35f4c667871" ;;
+    arm64) echo "c40b525c4dc58ce76a0e57a46e0e5c32b2e3b4ef0bfe15c8cb32c7a6a4081471" ;;
+  esac)
+  actual_sha256=$(sha256sum "${tmpdir}/${deb_name}" | cut -d' ' -f1)
+  if [ "${expected_sha256}" != "${actual_sha256}" ]; then
+    printf 'Litestream checksum mismatch: expected %s, got %s\n' "${expected_sha256}" "${actual_sha256}" >&2
+    exit 1
+  fi
+  log "Litestream checksum verified for ${deb_arch}"
+
   sudo dpkg -i "${tmpdir}/${deb_name}"
   rm -rf "${tmpdir}"
 
