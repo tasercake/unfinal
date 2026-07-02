@@ -9,7 +9,8 @@ import Config
 
 config :unfinal,
   generators: [timestamp_type: :utc_datetime],
-  ecto_repos: [Unfinal.Repo]
+  ecto_repos: [Unfinal.Repo],
+  storage_mode: :sqlite
 
 config :unfinal, Unfinal.Repo,
   adapter: Ecto.Adapters.SQLite3,
