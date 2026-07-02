@@ -19,6 +19,9 @@ defmodule Unfinal.Documents do
   def topic(path),
     do: @topic_prefix <> Base.url_encode64(ContentStore.normalize_path(path), padding: false)
 
+  @spec edit_topic() :: String.t()
+  def edit_topic, do: "edits"
+
   @spec get(path()) :: Document.t()
   def get(path), do: path |> ContentStore.normalize_path() |> server_call(:get)
 

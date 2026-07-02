@@ -17,6 +17,7 @@ defmodule UnfinalWeb.LiveLive do
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Unfinal.PubSub, @topic)
+      Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.edit_topic())
       active_paths = active_paths()
       Enum.each(active_paths, &Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic(&1)))
 
@@ -25,6 +26,7 @@ defmodule UnfinalWeb.LiveLive do
          active_paths: active_paths,
          sorted_paths: sorted_paths(),
          excerpts: excerpts(active_paths, %{}),
+         recent_edits: %{},
          authenticated: authenticated,
          user: user,
          claimed_namespace: claimed_namespace,
@@ -37,6 +39,7 @@ defmodule UnfinalWeb.LiveLive do
          active_paths: MapSet.new(),
          sorted_paths: [],
          excerpts: %{},
+         recent_edits: %{},
          authenticated: authenticated,
          user: user,
          claimed_namespace: claimed_namespace,
@@ -70,6 +73,20 @@ defmodule UnfinalWeb.LiveLive do
     else
       {:noreply, socket}
     end
+  end
+
+  def handle_info({:edit, path, timestamp}, socket) do
+    socket = update(socket, :recent_edits, &Map.put(&1, path, timestamp))
+
+    socket =
+      if not MapSet.member?(socket.assigns.active_paths, path) and
+           not Map.has_key?(socket.assigns.excerpts, path) do
+        update(socket, :excerpts, &Map.put(&1, path, Documents.get(path).content))
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -120,6 +137,14 @@ defmodule UnfinalWeb.LiveLive do
   defp document_href("/" <> path), do: "/n/" <> path
   defp document_href(_path), do: "/n"
 
+  defp visible_recent(recent_edits, active_paths, limit \\ 10) do
+    recent_edits
+    |> Enum.reject(fn {path, _ts} -> MapSet.member?(active_paths, path) end)
+    |> Enum.sort_by(fn {_, ts} -> -ts end)
+    |> Enum.take(limit)
+    |> Enum.map(fn {path, _ts} -> path end)
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -159,6 +184,25 @@ defmodule UnfinalWeb.LiveLive do
                   waiting for the first word...
                 </p>
               </a>
+            </div>
+
+            <% visible_recent = visible_recent(@recent_edits, @active_paths) %>
+
+            <div :if={visible_recent != []}>
+              <hr class="my-8 border-stone-200" />
+              <h2 class="text-xl font-semibold tracking-tight">Recently edited</h2>
+              <div class="mt-4 space-y-3">
+                <a
+                  :for={path <- visible_recent}
+                  href={document_href(path)}
+                  class="block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
+                >
+                  <div class="truncate text-sm font-semibold text-stone-900">{path}</div>
+                  <p :if={excerpt(Map.get(@excerpts, path, "")) != ""} class="mt-2 text-sm leading-6 text-stone-600">
+                    {excerpt(Map.get(@excerpts, path, ""))}
+                  </p>
+                </a>
+              </div>
             </div>
           </section>
         </main>
