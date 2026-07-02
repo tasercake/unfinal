@@ -23,6 +23,7 @@ defmodule UnfinalWeb.Router do
     get "/auth/clerk/callback", SessionController, :clerk_callback
     get "/logout", SessionController, :logout
     post "/logout", SessionController, :logout
+    live "/live", LiveLive
     live "/claim", ClaimLive
     live "/n", EditorLive
     live "/n/*path", EditorLive

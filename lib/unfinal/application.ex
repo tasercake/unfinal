@@ -14,6 +14,7 @@ defmodule Unfinal.Application do
         UnfinalWeb.Telemetry,
         {DNSCluster, query: Application.get_env(:unfinal, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Unfinal.PubSub},
+        UnfinalWeb.Presence,
         Unfinal.Repo,
         Unfinal.NamespaceStore,
         {Registry, keys: :unique, name: Unfinal.DocumentRegistry},
