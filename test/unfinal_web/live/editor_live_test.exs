@@ -789,21 +789,8 @@ defmodule UnfinalWeb.EditorLiveTest do
   defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 
   defp save_document(path, content) do
-    # Use SqliteDocuments.put for namespace-relative paths; insert directly for root
     case SqliteDocuments.put(path, content, nil, 0) do
       {:ok, _doc} ->
-        :ok
-
-      :ignored ->
-        # Root path "/" is ignored by SqliteDocuments; insert directly
-        now_iso = DateTime.to_iso8601(DateTime.utc_now())
-
-        Unfinal.Repo.query(
-          "INSERT OR REPLACE INTO documents(path, namespace, relative_path, content, revision, updated_at) VALUES(?1, ?2, ?3, ?4, 1, ?5)",
-          [path, path, "/", content, now_iso],
-          timeout: 5_000
-        )
-
         :ok
 
       {:error, reason} ->
