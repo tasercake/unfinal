@@ -23,6 +23,7 @@ defmodule UnfinalWeb.LiveLive do
       {:ok,
        assign(socket,
          active_paths: active_paths,
+         sorted_paths: sorted_paths(),
          excerpts: excerpts(active_paths, %{}),
          authenticated: authenticated,
          user: user,
@@ -34,6 +35,7 @@ defmodule UnfinalWeb.LiveLive do
       {:ok,
        assign(socket,
          active_paths: MapSet.new(),
+         sorted_paths: [],
          excerpts: %{},
          authenticated: authenticated,
          user: user,
@@ -59,7 +61,7 @@ defmodule UnfinalWeb.LiveLive do
 
     excerpts = excerpts(active_paths, socket.assigns.excerpts)
 
-    {:noreply, assign(socket, active_paths: active_paths, excerpts: excerpts)}
+    {:noreply, assign(socket, active_paths: active_paths, sorted_paths: sorted_paths(), excerpts: excerpts)}
   end
 
   def handle_info({:content_updated, path, %{content: content}}, socket) do
@@ -86,6 +88,14 @@ defmodule UnfinalWeb.LiveLive do
 
   defp active_paths do
     @topic |> Presence.list() |> Map.keys() |> MapSet.new()
+  end
+
+  defp sorted_paths do
+    @topic
+    |> Presence.list()
+    |> Enum.map(fn {_key, %{metas: [meta | _]}} -> {meta.path, meta.joined_at} end)
+    |> Enum.sort_by(fn {_, ts} -> -ts end)
+    |> Enum.map(fn {path, _} -> path end)
   end
 
   defp excerpts(active_paths, current_excerpts) do
@@ -137,7 +147,7 @@ defmodule UnfinalWeb.LiveLive do
 
             <div :if={!Enum.empty?(@active_paths)} class="space-y-3">
               <a
-                :for={path <- Enum.sort(@active_paths)}
+                :for={path <- @sorted_paths}
                 href={document_href(path)}
                 class="block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
               >
