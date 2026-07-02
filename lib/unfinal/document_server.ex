@@ -215,5 +215,11 @@ defmodule Unfinal.DocumentServer do
       path,
       %{content: doc.content, etag: doc.etag, revision: doc.revision}
     })
+
+    Phoenix.PubSub.broadcast(Unfinal.PubSub, Documents.edit_topic(), {
+      :edit,
+      path,
+      System.system_time(:second)
+    })
   end
 end
