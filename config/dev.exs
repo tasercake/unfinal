@@ -52,12 +52,6 @@ config :unfinal, UnfinalWeb.Endpoint,
     ]
   ]
 
-# SQLite is the default document persistence in development.
-config :unfinal, :storage_mode, :sqlite
-# Keep FilesystemObjectStore available for legacy R2 archive tests only
-config :unfinal, :object_store_adapter, Unfinal.FilesystemObjectStore
-config :unfinal, :filesystem_object_store, write_delay_ms: 1000
-
 config :unfinal, Unfinal.Repo, database: Path.expand("../.data/unfinal-dev.sqlite3", __DIR__)
 
 # Do not include metadata nor timestamps in development logs

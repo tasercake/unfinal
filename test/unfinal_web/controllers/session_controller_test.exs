@@ -157,7 +157,6 @@ defmodule UnfinalWeb.SessionControllerTest do
   end
 
   test "GET /auth/clerk/callback redirects claimed users to their namespace", %{conn: conn} do
-    Application.put_env(:unfinal, :storage_mode, :sqlite)
     put_clerk_config()
     :ok = NamespaceStore.claim("alpha", %{"email" => "user@example.com"})
 
@@ -173,7 +172,6 @@ defmodule UnfinalWeb.SessionControllerTest do
     assert redirected_to(conn) == "/n/alpha"
     assert get_session(conn, :authenticated) == true
   after
-    Application.delete_env(:unfinal, :storage_mode)
     Unfinal.Repo.query("DELETE FROM namespace_claims", [])
   end
 

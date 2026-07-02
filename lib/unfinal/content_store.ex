@@ -43,12 +43,7 @@ defmodule Unfinal.ContentStore do
   def normalize_path(path) when is_binary(path), do: path
 
   @spec adapter() :: module()
-  def adapter do
-    case Application.get_env(:unfinal, :storage_mode, :r2) do
-      :sqlite -> Unfinal.SqliteContentStore
-      _ -> Application.get_env(:unfinal, :object_store_adapter, Unfinal.S3ObjectStore)
-    end
-  end
+  def adapter, do: Unfinal.SqliteContentStore
 
   @spec flush_interval_ms() :: pos_integer()
   def flush_interval_ms do

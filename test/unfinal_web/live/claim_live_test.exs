@@ -4,8 +4,6 @@ defmodule UnfinalWeb.ClaimLiveTest do
   alias Unfinal.NamespaceStore
 
   setup do
-    Application.put_env(:unfinal, :storage_mode, :sqlite)
-
     previous_data_dir = System.get_env("UNFINAL_DATA_DIR")
 
     data_dir =

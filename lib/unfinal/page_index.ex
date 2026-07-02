@@ -12,7 +12,7 @@ defmodule Unfinal.PageIndex do
 
   @spec list(String.t()) :: [entry()]
   def list(namespace) when is_binary(namespace) do
-    if valid_namespace?(namespace) and storage_enabled?() do
+    if valid_namespace?(namespace) do
       Unfinal.SqliteDocuments.list_namespace(namespace)
     else
       []
@@ -23,26 +23,22 @@ defmodule Unfinal.PageIndex do
   def upsert(namespace, path, %DateTime{} = updated_at)
       when is_binary(namespace) and is_binary(path) do
     if valid_namespace?(namespace) and DocumentPath.valid_relative_path?(path) do
-      if storage_enabled?() do
-        updated_at_iso = DateTime.to_iso8601(updated_at)
+      updated_at_iso = DateTime.to_iso8601(updated_at)
 
-        case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso) do
-          :ok ->
-            entries = Unfinal.SqliteDocuments.list_namespace(namespace)
+      case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso) do
+        :ok ->
+          entries = Unfinal.SqliteDocuments.list_namespace(namespace)
 
-            Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(namespace), {
-              :page_index_updated,
-              namespace,
-              entries
-            })
+          Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(namespace), {
+            :page_index_updated,
+            namespace,
+            entries
+          })
 
-            :ok
+          :ok
 
-          {:error, reason} ->
-            {:error, reason}
-        end
-      else
-        :ok
+        {:error, reason} ->
+          {:error, reason}
       end
     else
       {:error, :invalid}
@@ -55,6 +51,4 @@ defmodule Unfinal.PageIndex do
   end
 
   defp valid_namespace?(namespace), do: DocumentPath.valid_segment?(namespace)
-
-  defp storage_enabled?, do: Application.get_env(:unfinal, :storage_mode) == :sqlite
 end

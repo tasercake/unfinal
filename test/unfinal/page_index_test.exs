@@ -6,7 +6,6 @@ defmodule Unfinal.PageIndexTest do
   alias Unfinal.SQLiteCleanup
 
   setup do
-    Application.put_env(:unfinal, :storage_mode, :sqlite)
     SQLiteCleanup.clear_all()
     PageIndex.clear()
     Documents.clear()

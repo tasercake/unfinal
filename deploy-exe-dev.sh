@@ -186,7 +186,6 @@ append_env_if_missing "PORT" "${PORT}"
 append_env_if_missing "UNFINAL_DATA_DIR" "${UNFINAL_DATA_DIR}"
 append_env_if_missing "UNFINAL_DATABASE_PATH" "${UNFINAL_DATABASE_PATH}"
 append_env_if_missing "UNFINAL_LITESTREAM_REPLICA_PATH" "${UNFINAL_LITESTREAM_REPLICA_PATH}"
-append_env_if_missing "UNFINAL_STORAGE_MODE" "sqlite"
 
 if ! sudo grep -Eq '^SECRET_KEY_BASE=' "${ENV_FILE}"; then
   if command -v openssl >/dev/null 2>&1; then
@@ -202,25 +201,6 @@ fi
 
 load_env_file
 
-# ── Phase 6 boot guard: reject dual-write/fallback flags ────────────────────
-
-log "Phase 6 deploy guard"
-if [[ "${UNFINAL_R2_DUAL_WRITE:-}" == "true" || "${UNFINAL_R2_DUAL_WRITE:-}" == "1" || "${UNFINAL_R2_DUAL_WRITE:-}" == "yes" ]]; then
-  printf 'UNFINAL_R2_DUAL_WRITE is set to a truthy value. Phase 6 forbids dual-write. Remove this flag from %s\n' "${ENV_FILE}" >&2
-  exit 1
-fi
-
-if [[ "${UNFINAL_R2_READ_FALLBACK:-}" == "true" || "${UNFINAL_R2_READ_FALLBACK:-}" == "1" || "${UNFINAL_R2_READ_FALLBACK:-}" == "yes" ]]; then
-  printf 'UNFINAL_R2_READ_FALLBACK is set to a truthy value. Phase 6 forbids read fallback. Remove this flag from %s\n' "${ENV_FILE}" >&2
-  exit 1
-fi
-
-if [[ -n "${UNFINAL_STORAGE_MODE:-}" && "${UNFINAL_STORAGE_MODE}" != "sqlite" ]]; then
-  printf 'UNFINAL_STORAGE_MODE must be sqlite (got: %s). Phase 6 uses SQLite only.\n' "${UNFINAL_STORAGE_MODE}" >&2
-  exit 1
-fi
-
-log "Phase 6 guard passed: SQLite-only, no dual-write/fallback"
 
 log "fetch deps"
 mix deps.get --only prod
@@ -345,11 +325,6 @@ fi
 rm -rf "${temp_restore_dir}"
 log "Litestream restore validation passed (integrity_check ok)"
 
-# ── Phase 6: No R2 backfill or cutover verification in normal deploy ────────
-# R2 backfill and cutover verification are explicit admin tasks only.
-# To run manually:
-#   mix unfinal.migrate_r2_to_sqlite --allow-r2-archive-read --commit
-#   mix unfinal.verify_sqlite_cutover --allow-r2-archive-read
 
 # ── Phoenix app: write service + reload + restart ───────────────────────────
 

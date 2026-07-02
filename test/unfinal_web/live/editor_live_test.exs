@@ -8,7 +8,6 @@ defmodule UnfinalWeb.EditorLiveTest do
   alias Unfinal.SqliteDocuments
 
   setup do
-    Application.put_env(:unfinal, :storage_mode, :sqlite)
     Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
     SQLiteCleanup.clear_all()
     Documents.clear()
@@ -17,7 +16,6 @@ defmodule UnfinalWeb.EditorLiveTest do
       SQLiteCleanup.clear_all()
       Documents.clear()
       Application.delete_env(:unfinal, :content_store_flush_interval_ms)
-      Application.delete_env(:unfinal, :storage_mode)
     end)
 
     :ok
@@ -382,8 +380,6 @@ defmodule UnfinalWeb.EditorLiveTest do
         revision: 1
       }
     }
-
-    Application.put_env(:unfinal, :object_store_adapter, Unfinal.FailingObjectStore)
 
     assert {:noreply, updated_socket} =
              UnfinalWeb.EditorLive.handle_info(

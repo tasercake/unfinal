@@ -2,8 +2,7 @@ defmodule Unfinal.SqliteDocuments do
   @moduledoc """
   SQLite-primary document reads, writes, and verification helpers.
 
-  All functions use `Unfinal.Repo` directly (single writer pool) and never
-  fall back to R2. Fallback-to-R2 repair lives in `Unfinal.SqliteContentStore`.
+  All functions use `Unfinal.Repo` directly (single writer pool).
 
   Path mapping:
   - `/namespace` → namespace = "namespace", relative_path = "/"
