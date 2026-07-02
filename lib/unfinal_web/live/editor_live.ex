@@ -358,6 +358,7 @@ defmodule UnfinalWeb.EditorLive do
               >
                 <a
                   class={[
+                    "block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
                     path == @path &&
                       "bg-white/70 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                   ]}
