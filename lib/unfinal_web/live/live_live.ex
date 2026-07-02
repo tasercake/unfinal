@@ -2,20 +2,45 @@ defmodule UnfinalWeb.LiveLive do
   use UnfinalWeb, :live_view
 
   alias Unfinal.Documents
+  alias Unfinal.NamespaceStore
+  alias UnfinalWeb.Layouts
   alias UnfinalWeb.Presence
 
   @topic "editing"
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
+    authenticated = Map.get(session, "authenticated", false)
+    user = Map.get(session, "user")
+    claimed_namespace = claimed_namespace(session)
+    show_claim_link? = authenticated and is_nil(claimed_namespace)
+
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Unfinal.PubSub, @topic)
       active_paths = active_paths()
       Enum.each(active_paths, &Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic(&1)))
 
-      {:ok, assign(socket, active_paths: active_paths, excerpts: excerpts(active_paths, %{}))}
+      {:ok,
+       assign(socket,
+         active_paths: active_paths,
+         excerpts: excerpts(active_paths, %{}),
+         authenticated: authenticated,
+         user: user,
+         claimed_namespace: claimed_namespace,
+         show_claim_link?: show_claim_link?,
+         mobile_menu_open: false
+       )}
     else
-      {:ok, assign(socket, active_paths: MapSet.new(), excerpts: %{})}
+      {:ok,
+       assign(socket,
+         active_paths: MapSet.new(),
+         excerpts: %{},
+         authenticated: authenticated,
+         user: user,
+         claimed_namespace: claimed_namespace,
+         show_claim_link?: show_claim_link?,
+         mobile_menu_open: false
+       )}
     end
   end
 
@@ -44,6 +69,20 @@ defmodule UnfinalWeb.LiveLive do
       {:noreply, socket}
     end
   end
+
+  @impl true
+  def handle_event("toggle_mobile_menu", _params, socket) do
+    {:noreply, assign(socket, mobile_menu_open: !socket.assigns.mobile_menu_open)}
+  end
+
+  def handle_event("close_mobile_menu", _params, socket) do
+    {:noreply, assign(socket, mobile_menu_open: false)}
+  end
+
+  defp claimed_namespace(%{"authenticated" => true, "user" => %{"id" => user_id}}),
+    do: NamespaceStore.namespace_for_user_id(user_id)
+
+  defp claimed_namespace(_session), do: nil
 
   defp active_paths do
     @topic |> Presence.list() |> Map.keys() |> MapSet.new()
@@ -74,35 +113,47 @@ defmodule UnfinalWeb.LiveLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <main class="min-h-dvh bg-stone-50 px-6 py-12 text-stone-950 [font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
-      <section class="mx-auto max-w-2xl">
-        <header class="mb-8">
-          <a href="/" class="text-sm font-semibold tracking-tight hover:opacity-80">Unfinal</a>
-          <h1 class="mt-8 text-3xl font-semibold tracking-tight">Live now</h1>
-          <p class="mt-2 text-sm text-stone-500">Documents being edited right now.</p>
-        </header>
+    <div class="h-dvh min-h-dvh overflow-hidden bg-stone-50 text-stone-950 [font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
+      <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-1">
+        <Layouts.sidebar
+          current_path="/live"
+          authenticated={@authenticated}
+          user={@user}
+          show_claim_link?={@show_claim_link?}
+          claimed_namespace={@claimed_namespace}
+          mobile_menu_open={@mobile_menu_open}
+        />
 
-        <div :if={Enum.empty?(@active_paths)} class="rounded-2xl border border-stone-200 bg-white px-5 py-6 text-sm text-stone-500 shadow-sm shadow-stone-200/40">
-          Nothing being edited right now.
-        </div>
+        <main class="flex min-h-0 min-w-0 flex-col overflow-y-auto">
+          <section class="mx-auto w-full max-w-2xl px-6 py-12">
+            <header class="mb-8">
+              <h1 class="text-3xl font-semibold tracking-tight">Live now</h1>
+              <p class="mt-2 text-sm text-stone-500">Spy on works in progress ;)</p>
+            </header>
 
-        <div :if={!Enum.empty?(@active_paths)} class="space-y-3">
-          <a
-            :for={path <- Enum.sort(@active_paths)}
-            href={document_href(path)}
-            class="block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
-          >
-            <div class="truncate text-sm font-semibold text-stone-900">{path}</div>
-            <p :if={excerpt(Map.get(@excerpts, path, "")) != ""} class="mt-2 text-sm leading-6 text-stone-600">
-              {excerpt(Map.get(@excerpts, path, ""))}
-            </p>
-            <p :if={excerpt(Map.get(@excerpts, path, "")) == ""} class="mt-2 text-sm italic leading-6 text-stone-400">
-              waiting for the first word...
-            </p>
-          </a>
-        </div>
-      </section>
-    </main>
+            <div :if={Enum.empty?(@active_paths)} class="rounded-2xl border border-stone-200 bg-white px-5 py-6 text-sm text-stone-500 shadow-sm shadow-stone-200/40">
+              Nothing being edited right now.
+            </div>
+
+            <div :if={!Enum.empty?(@active_paths)} class="space-y-3">
+              <a
+                :for={path <- Enum.sort(@active_paths)}
+                href={document_href(path)}
+                class="block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
+              >
+                <div class="truncate text-sm font-semibold text-stone-900">{path}</div>
+                <p :if={excerpt(Map.get(@excerpts, path, "")) != ""} class="mt-2 text-sm leading-6 text-stone-600">
+                  {excerpt(Map.get(@excerpts, path, ""))}
+                </p>
+                <p :if={excerpt(Map.get(@excerpts, path, "")) == ""} class="mt-2 text-sm italic leading-6 text-stone-400">
+                  waiting for the first word...
+                </p>
+              </a>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
     """
   end
 end
