@@ -15,6 +15,7 @@ defmodule Unfinal.Application do
         {DNSCluster, query: Application.get_env(:unfinal, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Unfinal.PubSub},
         Unfinal.Repo,
+        Unfinal.NamespaceStore,
         {Registry, keys: :unique, name: Unfinal.DocumentRegistry},
         {DynamicSupervisor, strategy: :one_for_one, name: Unfinal.DocumentSupervisor},
         {Task.Supervisor, name: Unfinal.DocumentTaskSupervisor},

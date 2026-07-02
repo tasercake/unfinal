@@ -29,5 +29,6 @@ jobs:
             git reset --hard origin/main
             git clean -fd
             chmod +x ./deploy-exe-dev.sh
+            export CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}"
             ./deploy-exe-dev.sh
           '

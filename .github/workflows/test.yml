@@ -39,6 +39,7 @@ jobs:
         run: |
           MIX_ENV=test mix ecto.dump --dump-path priv/repo/schema.sql
           sed -i "s/INSERT INTO schema_migrations VALUES(20260630000000,'[^']*');/INSERT INTO schema_migrations VALUES(20260630000000,'0000-00-00T00:00:00');/" priv/repo/schema.sql
+          sed -i "s/INSERT INTO schema_migrations VALUES(20260701000000,'[^']*');/INSERT INTO schema_migrations VALUES(20260701000000,'0000-00-00T00:00:00');/" priv/repo/schema.sql
           git diff --exit-code priv/repo/schema.sql
 
       - name: Run tests

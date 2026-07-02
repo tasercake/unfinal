@@ -228,6 +228,23 @@ if [[ ! -s "${UNFINAL_DATABASE_PATH}" ]]; then
   exit 1
 fi
 
+# ── Data migration: populate user_id in namespace_claims from Clerk API ─────
+# Note: set -euo pipefail is already active from line 3 of this script.
+# mix command failure will abort the deploy immediately.
+
+if [[ -n "${CLERK_SECRET_KEY:-}" ]]; then
+  log "migrate namespace_claims user_id from Clerk API"
+  mix unfinal.migrate_namespace_user_ids || {
+    log "FATAL: Data migration failed. Aborting deploy."
+    exit 1
+  }
+else
+  log "FATAL: CLERK_SECRET_KEY is not set. Cannot migrate namespace_claims."
+  log "The scope requires CLERK_SECRET_KEY to be available as a GitHub Actions secret."
+  log "If this is the first-ever deploy with zero existing claims, set the secret and re-deploy."
+  exit 1
+fi
+
 # ── Install Litestream + write config + start service ─────────────────────────
 
 install_tools_and_litestream

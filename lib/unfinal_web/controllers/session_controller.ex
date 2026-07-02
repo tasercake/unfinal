@@ -172,12 +172,12 @@ defmodule UnfinalWeb.SessionController do
 
   defp user_from_clerk(_user), do: {:error, :missing_email}
 
-  defp authenticate(conn, %{"email" => email} = user, return_to) do
+  defp authenticate(conn, %{"id" => user_id} = user, return_to) do
     redirect_to =
       if is_binary(return_to) and return_to != "/" and return_to != ~p"/" do
         return_to
       else
-        case NamespaceStore.namespace_for_email(email) do
+        case NamespaceStore.namespace_for_user_id(user_id) do
           namespace when is_binary(namespace) -> "/n/#{namespace}"
           nil -> ~p"/claim"
         end

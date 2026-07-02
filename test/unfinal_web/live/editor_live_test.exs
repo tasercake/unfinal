@@ -16,6 +16,8 @@ defmodule UnfinalWeb.EditorLiveTest do
       SQLiteCleanup.clear_all()
       Documents.clear()
       Application.delete_env(:unfinal, :content_store_flush_interval_ms)
+      Application.delete_env(:unfinal, :storage_mode)
+      # Keep SQLite mode (R2 mode deleted)
     end)
 
     :ok
@@ -127,7 +129,7 @@ defmodule UnfinalWeb.EditorLiveTest do
 
   test "namespace owner edits own namespace and descendants but not root", %{conn: conn} do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
-    conn = logged_in(conn, "different-owner-id", "owner@example.com")
+    conn = logged_in(conn, "owner", "owner@example.com")
 
     {:ok, root, root_html} = live(conn, ~p"/n")
     {:ok, namespace, namespace_html} = live(conn, "/n/alpha")
@@ -171,7 +173,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     :ok = Unfinal.PageIndex.upsert("alpha", "/", ~U[2026-06-23 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("alpha", "/bluebird", ~U[2026-06-24 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("alpha", "/rainriver", ~U[2026-06-25 00:00:00Z])
-    conn = logged_in(conn, "different-owner-id", "owner@example.com")
+    conn = logged_in(conn, "owner", "owner@example.com")
 
     {:ok, view, html} = live(conn, "/n/alpha")
 
@@ -224,7 +226,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     :ok = Unfinal.PageIndex.upsert("alpha", "/", ~U[2026-06-23 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("alpha", "/bluebird", ~U[2026-06-24 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("alpha", "/rainriver", ~U[2026-06-25 00:00:00Z])
-    conn = logged_in(conn, "different-owner-id", "owner@example.com")
+    conn = logged_in(conn, "owner", "owner@example.com")
 
     {:ok, view, _html} = live(conn, "/n/alpha/bluebird")
 
@@ -253,7 +255,7 @@ defmodule UnfinalWeb.EditorLiveTest do
        } do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
     :ok = Unfinal.PageIndex.upsert("alpha", "/bluebird", ~U[2026-06-24 00:00:00Z])
-    conn = logged_in(conn, "different-owner-id", "owner@example.com")
+    conn = logged_in(conn, "owner", "owner@example.com")
 
     {:ok, root_view, _html} = live(conn, "/n/alpha")
 
@@ -466,7 +468,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     save_document("/alpha/notes", "private notes")
 
     # Non-owner uses Documents.delete directly
-    assert {:error, :not_authorized} = Documents.delete("/alpha/notes", "other@example.com")
+    assert {:error, :not_authorized} = Documents.delete("/alpha/notes", "other")
     assert Documents.get("/alpha/notes").content == "private notes"
   end
 
@@ -475,7 +477,7 @@ defmodule UnfinalWeb.EditorLiveTest do
     save_document("/alpha", "root content")
 
     # Direct API call
-    assert {:error, :cannot_delete_root} = Documents.delete("/alpha", "owner@example.com")
+    assert {:error, :cannot_delete_root} = Documents.delete("/alpha", "owner")
     assert Documents.get("/alpha").content == "root content"
   end
 
