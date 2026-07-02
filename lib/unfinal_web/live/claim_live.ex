@@ -2,17 +2,23 @@ defmodule UnfinalWeb.ClaimLive do
   use UnfinalWeb, :live_view
 
   alias Unfinal.NamespaceStore
+  alias UnfinalWeb.Layouts
 
   @impl true
   def mount(_params, session, socket) do
     with %{"authenticated" => true, "user" => %{"id" => user_id} = user} <- session do
+      claimed_namespace = NamespaceStore.namespace_for_user_id(user_id)
+
       {:ok,
        assign(socket,
          user: user,
-         claimed_namespace: NamespaceStore.namespace_for_user_id(user_id),
+         authenticated: true,
+         claimed_namespace: claimed_namespace,
+         show_claim_link?: is_nil(claimed_namespace),
          namespace: "",
          message: nil,
-         error: nil
+         error: nil,
+         mobile_menu_open: false
        )}
     else
       _session ->
@@ -54,6 +60,14 @@ defmodule UnfinalWeb.ClaimLive do
     end
   end
 
+  def handle_event("toggle_mobile_menu", _params, socket) do
+    {:noreply, assign(socket, mobile_menu_open: !socket.assigns.mobile_menu_open)}
+  end
+
+  def handle_event("close_mobile_menu", _params, socket) do
+    {:noreply, assign(socket, mobile_menu_open: false)}
+  end
+
   defp assign_validation(socket, namespace) do
     namespace = String.trim(namespace)
 
@@ -86,37 +100,52 @@ defmodule UnfinalWeb.ClaimLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <main class="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 bg-stone-50 p-6 text-stone-950">
-      <h1 class="text-3xl font-semibold tracking-tight">Claim your page</h1>
-
-      <div :if={@claimed_namespace} class="rounded border border-stone-200 bg-white p-4">
-        You already claimed <a class="underline underline-offset-4" href={"/n/#{@claimed_namespace}"}>/n/{@claimed_namespace}</a>.
-      </div>
-
-      <.form
-        :if={!@claimed_namespace}
-        for={%{}}
-        as={:claim}
-        id="claim-form"
-        phx-change="validate"
-        phx-submit="claim"
-        class="flex flex-col gap-3"
-      >
-        <label class="text-sm font-medium" for="claim_namespace">Namespace</label>
-        <input
-          id="claim_namespace"
-          name="claim[namespace]"
-          value={@namespace}
-          pattern="[a-z0-9][a-z0-9-]*[a-z0-9]|[a-z0-9]"
-          required
-          autocomplete="off"
-          class="border border-stone-200 bg-white p-3 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
+    <div class="h-dvh min-h-dvh overflow-hidden bg-stone-50 text-stone-950 [font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
+      <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-1">
+        <Layouts.sidebar
+          current_path="/claim"
+          authenticated={@authenticated}
+          user={@user}
+          show_claim_link?={@show_claim_link?}
+          claimed_namespace={@claimed_namespace}
+          mobile_menu_open={@mobile_menu_open}
         />
-        <p :if={@error} class="text-sm text-red-700">{@error}</p>
-        <p :if={@message} class="text-sm text-green-700">{@message}</p>
-        <button class="border border-stone-950 bg-stone-950 px-4 py-2 text-white" type="submit">Claim</button>
-      </.form>
-    </main>
+
+        <main class="flex min-h-0 min-w-0 flex-col overflow-y-auto">
+          <section class="mx-auto flex w-full max-w-md flex-col justify-center gap-6 px-6 py-12">
+            <h1 class="text-3xl font-semibold tracking-tight">Claim your page</h1>
+
+            <div :if={@claimed_namespace} class="rounded border border-stone-200 bg-white p-4">
+              You already claimed <a class="underline underline-offset-4" href={"/n/#{@claimed_namespace}"}>/n/{@claimed_namespace}</a>.
+            </div>
+
+            <.form
+              :if={!@claimed_namespace}
+              for={%{}}
+              as={:claim}
+              id="claim-form"
+              phx-change="validate"
+              phx-submit="claim"
+              class="flex flex-col gap-3"
+            >
+              <label class="text-sm font-medium" for="claim_namespace">Namespace</label>
+              <input
+                id="claim_namespace"
+                name="claim[namespace]"
+                value={@namespace}
+                pattern="[a-z0-9][a-z0-9-]*[a-z0-9]|[a-z0-9]"
+                required
+                autocomplete="off"
+                class="border border-stone-200 bg-white p-3 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
+              />
+              <p :if={@error} class="text-sm text-red-700">{@error}</p>
+              <p :if={@message} class="text-sm text-green-700">{@message}</p>
+              <button class="border border-stone-950 bg-stone-950 px-4 py-2 text-white" type="submit">Claim</button>
+            </.form>
+          </section>
+        </main>
+      </div>
+    </div>
     """
   end
 end
