@@ -18,8 +18,12 @@ defmodule Mix.Tasks.Unfinal.MigrateNamespaceUserIds do
 
   @impl true
   def run(_args) do
+    # Start only the minimum needed: Ecto + Repo (NOT the full app/Endpoint).
+    # The full app may already be running on the port during deploy.
     Mix.Task.run("app.start", ["--no-start"])
-    {:ok, _} = Application.ensure_all_started(:unfinal)
+    {:ok, _} = Application.ensure_all_started(:ecto)
+    {:ok, _} = Application.ensure_all_started(:ecto_sql)
+    {:ok, _} = Unfinal.Repo.start_link()
 
     clerk_secret_key =
       System.get_env("CLERK_SECRET_KEY") ||
