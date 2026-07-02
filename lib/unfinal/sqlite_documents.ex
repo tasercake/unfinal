@@ -7,12 +7,13 @@ defmodule Unfinal.SqliteDocuments do
   Path mapping:
   - `/namespace` → namespace = "namespace", relative_path = "/"
   - `/namespace/rest` → namespace = "namespace", relative_path = "/rest"
-  - `/` → skipped as `:ignored` (no namespace segment)
+  - `/` → namespace = "__root__", relative_path = "/"
   """
 
   alias Unfinal.ContentStore.Document
   alias Unfinal.Repo
 
+  @root_namespace "__root__"
   @query_timeout 1_000
 
   @doc """
@@ -194,7 +195,7 @@ defmodule Unfinal.SqliteDocuments do
   end
 
   # Path → {namespace, relative_path} or :ignored
-  defp parts("/"), do: :ignored
+  defp parts("/"), do: {:ok, {@root_namespace, "/"}}
 
   defp parts("/" <> rest) do
     case String.split(rest, "/", parts: 2) do
