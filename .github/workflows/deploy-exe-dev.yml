@@ -23,18 +23,26 @@ jobs:
       - name: Verify SSH host key fingerprint
         run: |
           set -euo pipefail
-          host="${{ secrets.EXE_DEV_HOST }}"
-          mkdir -p ~/.ssh
-          ssh-keyscan -p 22 "$host" >> ~/.ssh/known_hosts 2>/dev/null
-          fingerprint=$(ssh-keygen -lf ~/.ssh/known_hosts -E sha256 | grep "$host" | awk '{print $2}')
-          expected="SHA256:JJOP/lwiBGOMilfONPWZCXUrfK154cnJFXcqlsi6lPo"
-          if [[ "$fingerprint" != "$expected" ]]; then
-            echo "ERROR: SSH host key fingerprint mismatch!" >&2
-            echo "Expected: $expected" >&2
-            echo "Got:      $fingerprint" >&2
+          deploy_target="${{ secrets.EXE_DEV_HOST }}"
+          host="${deploy_target#*@}"
+          expected="${{ secrets.EXE_DEV_SSH_RSA_SHA256_FINGERPRINT }}"
+
+          if [[ -z "$expected" ]]; then
+            echo "ERROR: EXE_DEV_SSH_RSA_SHA256_FINGERPRINT secret is not set." >&2
             exit 1
           fi
-          echo "SSH host key fingerprint verified."
+
+          mkdir -p ~/.ssh
+          known_hosts_file="$(mktemp)"
+          ssh-keyscan -t rsa -p 22 "$host" > "$known_hosts_file" 2>/dev/null
+          fingerprint=$(ssh-keygen -lf "$known_hosts_file" -E sha256 | awk 'NR == 1 {print $2}')
+          if [[ -z "$fingerprint" || "$fingerprint" != "$expected" ]]; then
+            echo "ERROR: SSH RSA host key fingerprint mismatch!" >&2
+            echo "Got:      ${fingerprint:-<none>}" >&2
+            exit 1
+          fi
+          cat "$known_hosts_file" >> ~/.ssh/known_hosts
+          echo "SSH RSA host key fingerprint verified."
 
       - name: Run remote deploy script with Litestream restore validation
         run: |
