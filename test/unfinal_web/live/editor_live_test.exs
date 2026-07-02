@@ -427,7 +427,11 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     assert Documents.get("/alpha/notes").content == "my notes"
 
-    # Click the trash icon to show confirmation
+    # Open kebab menu and click Delete
+    view
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
     html =
       view
       |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
@@ -491,15 +495,15 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     # Root link (/n/alpha) is rendered as a plain <a> without a delete button in the same element
     # Non-root links have delete buttons - verify delete buttons exist for non-root pages
-    assert html =~ ~s(phx-click="confirm_delete")
+    assert html =~ ~s(phx-click="toggle_page_menu")
     assert html =~ ~s(phx-value-path="/n/alpha/notes")
 
-    # The root link does NOT appear in a div with confirm_delete; it's a plain <a>
+    # The root link does NOT have a kebab menu; it's a plain <a>
     # Parse and verify the root link is a standalone element, not inside a group
     parsed = Floki.parse_document!(html)
     root_links = Floki.find(parsed, "a[href='/n/alpha']")
     assert length(root_links) >= 1
-    # Verify no confirm_delete button targets the root path
+    # Verify no toggle_page_menu button targets the root path
     delete_buttons = Floki.find(parsed, "button[phx-value-path='/n/alpha']")
     assert delete_buttons == []
   end
@@ -511,10 +515,14 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     {:ok, view, _html} = live(conn, "/n/alpha")
 
-    # Delete: confirm_delete then delete_page
+    # Open kebab menu, then confirm_delete and delete_page
     view
-    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
-    |> render_click()
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    view
+      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
 
     {:error, {:live_redirect, _}} =
       view
@@ -537,9 +545,14 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     {:ok, view, _html} = live(conn, "/n/alpha/notes")
 
+    # Open kebab menu and delete
     view
-    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
-    |> render_click()
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    view
+      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
 
     {:error, {:live_redirect, %{to: redirect_to}}} =
       view
@@ -557,9 +570,14 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     {:ok, view, _html} = live(conn, "/n/alpha/home")
 
+    # Open kebab menu and delete
     view
-    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
-    |> render_click()
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    view
+      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
 
     {:error, {:live_redirect, %{to: redirect_to}}} =
       view
@@ -579,7 +597,11 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     {:ok, view, _html} = live(conn, "/n/alpha")
 
-    # Click trash icon to show confirmation
+    # Open kebab menu, then click Delete to show confirmation
+    view
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
     html =
       view
       |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
@@ -593,6 +615,122 @@ defmodule UnfinalWeb.EditorLiveTest do
     # Cancel the dialog
     html = view |> element("button[phx-click='cancel_delete']") |> render_click()
     refute html =~ "Permanently delete"
+  end
+
+  # ── Kebab menu tests ──────────────────────────────────────────────────────
+
+  test "kebab button is present in DOM with hidden class on indexed pages", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, _view, html} = live(conn, "/n/alpha")
+
+    # Kebab button exists but is hidden (only shown on group hover)
+    assert html =~ ~s(phx-click="toggle_page_menu")
+    assert html =~ ~s(phx-value-path="/n/alpha/notes")
+    assert html =~ ~s(hero-ellipsis-vertical)
+    assert html =~ ~s(class="hidden rounded p-0.5)
+  end
+
+  test "clicking kebab opens the dropdown menu", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    # Menu starts closed
+    refute render(view) =~ ~s(phx-click-away="close_page_menu")
+
+    # Click kebab to open
+    html =
+      view
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    # Dropdown appears with click-away handler and Delete button
+    assert html =~ ~s(phx-click-away="close_page_menu")
+    assert html =~ ~s(phx-click="confirm_delete")
+    assert html =~ ~s(phx-value-path="/n/alpha/notes")
+    assert html =~ "Delete"
+  end
+
+  test "clicking outside closes the kebab menu", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    # Open the menu
+    view
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    assert render(view) =~ ~s(phx-click-away="close_page_menu")
+
+    # Simulate click-away
+    html = render_hook(view, "close_page_menu", %{})
+    refute html =~ ~s(phx-click-away="close_page_menu")
+  end
+
+  test "clicking kebab toggles menu open and closed", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    # Open
+    html =
+      view
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    assert html =~ ~s(phx-click-away="close_page_menu")
+
+    # Click again to close
+    html =
+      view
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    refute html =~ ~s(phx-click-away="close_page_menu")
+  end
+
+  test "kebab menu delete triggers confirm_delete dialog", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    # Open kebab menu
+    view
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    # Click Delete in dropdown
+    html =
+      view
+      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    # Confirm dialog appears
+    assert html =~ "Permanently delete"
+    assert html =~ ~s(phx-click="delete_page")
+  end
+
+  test "non-owner does not see kebab menu", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "other", "other@example.com")
+
+    {:ok, _view, html} = live(conn, "/n/alpha")
+
+    refute html =~ "toggle_page_menu"
+    refute html =~ "hero-ellipsis-vertical"
   end
 
   # ── Mobile hamburger menu tests ──────────────────────────────────────────────
