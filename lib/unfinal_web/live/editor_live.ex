@@ -354,16 +354,13 @@ defmodule UnfinalWeb.EditorLive do
 
               <div
                 :for={path <- @page_paths}
-                class="group flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950"
+                class={[
+                  "group flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
+                  path == @path &&
+                    "bg-white/70 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                ]}
               >
-                <a
-                  class={[
-                    "block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
-                    path == @path &&
-                      "bg-white/70 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
-                  ]}
-                  href={path}
-                >
+                <a href={path}>
                   {display_page_path(path)}
                 </a>
                 <button
