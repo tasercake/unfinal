@@ -3,6 +3,7 @@ defmodule UnfinalWeb.LiveLive do
 
   alias Unfinal.Documents
   alias Unfinal.NamespaceStore
+  alias Unfinal.SqliteDocuments
   alias UnfinalWeb.Layouts
   alias UnfinalWeb.Presence
 
@@ -21,12 +22,16 @@ defmodule UnfinalWeb.LiveLive do
       active_paths = active_paths()
       Enum.each(active_paths, &Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic(&1)))
 
+      recent_edits = seed_recent_edits()
+      recent_paths = Map.keys(recent_edits) -- MapSet.to_list(active_paths)
+      excerpts = excerpts(MapSet.union(active_paths, MapSet.new(recent_paths)), %{})
+
       {:ok,
        assign(socket,
          active_paths: active_paths,
          sorted_paths: sorted_paths(),
-         excerpts: excerpts(active_paths, %{}),
-         recent_edits: %{},
+         excerpts: excerpts,
+         recent_edits: recent_edits,
          authenticated: authenticated,
          user: user,
          claimed_namespace: claimed_namespace,
@@ -102,6 +107,21 @@ defmodule UnfinalWeb.LiveLive do
     do: NamespaceStore.namespace_for_user_id(user_id)
 
   defp claimed_namespace(_session), do: nil
+
+  defp seed_recent_edits do
+    SqliteDocuments.recent_edits(20)
+    |> Enum.map(fn %{path: path, updated_at: updated_at} ->
+      {path, parse_timestamp(updated_at)}
+    end)
+    |> Map.new()
+  end
+
+  defp parse_timestamp(iso_string) do
+    case DateTime.from_iso8601(iso_string) do
+      {:ok, dt, _} -> DateTime.to_unix(dt)
+      _ -> 0
+    end
+  end
 
   defp active_paths do
     @topic |> Presence.list() |> Map.keys() |> MapSet.new()
