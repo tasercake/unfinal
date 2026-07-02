@@ -114,7 +114,7 @@ defmodule UnfinalWeb.EditorLive do
       when is_binary(namespace) and is_binary(url_path) do
     storage_path = String.replace_prefix(url_path, "/n", "")
 
-    case Documents.delete(storage_path, user["email"]) do
+    case Documents.delete(storage_path, user["id"]) do
       :ok ->
         entries = Unfinal.PageIndex.list(namespace)
 
@@ -204,8 +204,8 @@ defmodule UnfinalWeb.EditorLive do
 
   defp superuser?(_session), do: false
 
-  defp claimed_namespace(%{"authenticated" => true, "user" => %{"email" => email}}),
-    do: NamespaceStore.namespace_for_email(email)
+  defp claimed_namespace(%{"authenticated" => true, "user" => %{"id" => user_id}}),
+    do: NamespaceStore.namespace_for_user_id(user_id)
 
   defp claimed_namespace(_session), do: nil
 

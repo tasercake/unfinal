@@ -81,9 +81,9 @@ defmodule Unfinal.Documents do
 
   defp extract_namespace(_), do: {:error, :invalid_path}
 
-  defp namespace_owned_by?(namespace, email) do
+  defp namespace_owned_by?(namespace, user_id) do
     case Unfinal.NamespaceStore.owner(namespace) do
-      %{email: ^email} -> true
+      %{user_id: ^user_id} -> true
       _ -> false
     end
   end
