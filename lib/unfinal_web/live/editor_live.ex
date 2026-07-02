@@ -50,6 +50,7 @@ defmodule UnfinalWeb.EditorLive do
         root_page_path: root_page_path(segments, path, true),
         page_paths: page_paths(segments, path),
         pending_delete_path: nil,
+        menu_open_path: nil,
         mobile_menu_open: false
       )
 
@@ -133,6 +134,15 @@ defmodule UnfinalWeb.EditorLive do
   end
 
   def handle_event("delete_page", _params, socket), do: {:noreply, socket}
+
+  def handle_event("toggle_page_menu", %{"path" => path}, socket) do
+    new_path = if socket.assigns.menu_open_path == path, do: nil, else: path
+    {:noreply, assign(socket, menu_open_path: new_path)}
+  end
+
+  def handle_event("close_page_menu", _params, socket) do
+    {:noreply, assign(socket, menu_open_path: nil)}
+  end
 
   def handle_event("toggle_mobile_menu", _params, socket) do
     {:noreply, assign(socket, mobile_menu_open: !socket.assigns.mobile_menu_open)}
@@ -334,45 +344,72 @@ defmodule UnfinalWeb.EditorLive do
                 <button class="sr-only" type="submit">Open new page</button>
               </.form>
 
-              <a
+              <div
                 :if={@path != @root_page_path and @path not in @page_paths}
                 class="group flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
-                href={@path}
               >
-                <span>{display_page_path(@path)}</span>
-                <button
-                  :if={@writer?}
-                  type="button"
-                  phx-click="confirm_delete"
-                  phx-value-path={@path}
-                  class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-red-600 group-hover:block"
-                  title="Delete page"
-                >
-                  <span class="hero-trash-solid h-3.5 w-3.5" />
-                </button>
-              </a>
+                <a href={@path} class="flex-1 truncate">
+                  {display_page_path(@path)}
+                </a>
+                <div :if={@writer?} class="relative">
+                  <button
+                    type="button"
+                    phx-click="toggle_page_menu"
+                    phx-value-path={@path}
+                    class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 group-hover:block"
+                  >
+                    <span class="hero-ellipsis-vertical h-3.5 w-3.5" />
+                  </button>
+                  <div
+                    :if={@menu_open_path == @path}
+                    phx-click-away="close_page_menu"
+                    class="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
+                  >
+                    <button
+                      phx-click="confirm_delete"
+                      phx-value-path={@path}
+                      class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               <div
                 :for={path <- @page_paths}
                 class={[
                   "group flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
                   path == @path &&
-                    "bg-white/70 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                    "bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                 ]}
               >
-                <a href={path}>
+                <a href={path} class="flex-1 truncate">
                   {display_page_path(path)}
                 </a>
-                <button
-                  :if={@writer?}
-                  type="button"
-                  phx-click="confirm_delete"
-                  phx-value-path={path}
-                  class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-red-600 group-hover:block"
-                  title="Delete page"
-                >
-                  <span class="hero-trash-solid h-3.5 w-3.5" />
-                </button>
+                <div :if={@writer?} class="relative">
+                  <button
+                    type="button"
+                    phx-click="toggle_page_menu"
+                    phx-value-path={path}
+                    class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 group-hover:block"
+                  >
+                    <span class="hero-ellipsis-vertical h-3.5 w-3.5" />
+                  </button>
+                  <div
+                    :if={@menu_open_path == path}
+                    phx-click-away="close_page_menu"
+                    class="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
+                  >
+                    <button
+                      phx-click="confirm_delete"
+                      phx-value-path={path}
+                      class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </nav>
