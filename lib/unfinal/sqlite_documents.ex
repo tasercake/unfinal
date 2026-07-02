@@ -138,6 +138,20 @@ defmodule Unfinal.SqliteDocuments do
     end
   end
 
+  @doc "List most recently edited documents across all namespaces."
+  @spec recent_edits(non_neg_integer()) :: [%{path: String.t(), updated_at: String.t()}]
+  def recent_edits(limit \\ 20) when is_integer(limit) and limit > 0 do
+    sql = "SELECT path, updated_at FROM documents WHERE updated_at IS NOT NULL ORDER BY updated_at DESC LIMIT ?1"
+
+    case query(sql, [limit]) do
+      {:ok, %{rows: rows}} ->
+        Enum.map(rows, fn [path, upd] -> %{path: path, updated_at: upd} end)
+
+      {:error, _} ->
+        []
+    end
+  end
+
   @doc "Count all document rows."
   @spec count_documents() :: non_neg_integer()
   def count_documents do
