@@ -20,9 +20,25 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.UNFINAL_DEPLOY_SSH_PRIVATE_KEY }}
 
+      - name: Verify SSH host key fingerprint
+        run: |
+          set -euo pipefail
+          host="${{ secrets.EXE_DEV_HOST }}"
+          mkdir -p ~/.ssh
+          ssh-keyscan -p 22 "$host" >> ~/.ssh/known_hosts 2>/dev/null
+          fingerprint=$(ssh-keygen -lf ~/.ssh/known_hosts -E sha256 | grep "$host" | awk '{print $2}')
+          expected="SHA256:JJOP/lwiBGOMilfONPWZCXUrfK154cnJFXcqlsi6lPo"
+          if [[ "$fingerprint" != "$expected" ]]; then
+            echo "ERROR: SSH host key fingerprint mismatch!" >&2
+            echo "Expected: $expected" >&2
+            echo "Got:      $fingerprint" >&2
+            exit 1
+          fi
+          echo "SSH host key fingerprint verified."
+
       - name: Run remote deploy script with Litestream restore validation
         run: |
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 22 "${{ secrets.EXE_DEV_HOST }}" '
+          ssh -o StrictHostKeyChecking=yes -p 22 "${{ secrets.EXE_DEV_HOST }}" '
             set -euo pipefail
             cd /home/exedev/unfinal
             git fetch origin main

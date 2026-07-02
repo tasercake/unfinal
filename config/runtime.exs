@@ -40,7 +40,6 @@ if config_env() == :prod do
       raise """
       environment variable ENCRYPTION_SALT is missing.
       Generate one with: mix phx.gen.secret
-      Salt also stored in /etc/unfinal/unfinal.env on production.
       """
 
   config :unfinal, :encryption_salt, encryption_salt
@@ -59,12 +58,11 @@ if config_env() == :prod do
 
   config :unfinal, UnfinalWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
-    check_origin: [
-      "https://unfinal.page",
-      "https://unfinal.onrender.com",
-      "https://synopticon.exe.xyz",
-      "https://unfinal.exe.xyz"
-    ],
+    check_origin:
+      case System.get_env("CHECK_ORIGIN") do
+        nil -> true
+        origins -> String.split(origins, ",")
+      end,
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
