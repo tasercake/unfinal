@@ -122,19 +122,16 @@ install_tools_and_litestream() {
   curl -fsSL -o "${tmpdir}/${deb_name}" "${deb_url}"
 
   # Verify checksum
-  local expected_hash
-  case "${asset_arch}" in
-    x86_64) expected_hash="7be09e7cb28e4dcf938e03774b9c8c2b0c3e0fa199c3b1d35a9f2ab2ce31a923" ;;
-    arm64)  expected_hash="d5e4e5d9c1a9e6b4f8c3a2b7d0e1f4a5c6b8d9e0f1a2b3c4d5e6f7a8b9c0d1e2" ;;
-  esac
-  local actual_hash
-  actual_hash=$(sha256sum "${tmpdir}/${deb_name}" | awk '{print $1}')
-  if [[ "${actual_hash}" != "${expected_hash}" ]]; then
-    printf 'Litestream checksum mismatch for %s: expected %s, got %s\n' "${asset_arch}" "${expected_hash}" "${actual_hash}" >&2
-    rm -rf "${tmpdir}"
+  expected_sha256=$(case "${deb_arch}" in
+    amd64) echo "939cb373025f4e08b7872c5674687615a9b0b33f4b64e503d1b0b35f4c667871" ;;
+    arm64) echo "c40b525c4dc58ce76a0e57a46e0e5c32b2e3b4ef0bfe15c8cb32c7a6a4081471" ;;
+  esac)
+  actual_sha256=$(sha256sum "${tmpdir}/${deb_name}" | cut -d' ' -f1)
+  if [ "${expected_sha256}" != "${actual_sha256}" ]; then
+    printf 'Litestream checksum mismatch: expected %s, got %s\n' "${expected_sha256}" "${actual_sha256}" >&2
     exit 1
   fi
-  log "Litestream checksum verified for ${asset_arch}"
+  log "Litestream checksum verified for ${deb_arch}"
 
   sudo dpkg -i "${tmpdir}/${deb_name}"
   rm -rf "${tmpdir}"

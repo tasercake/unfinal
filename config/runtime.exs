@@ -51,18 +51,34 @@ if config_env() == :prod do
 
   config :unfinal, Unfinal.Repo, database: sqlite_path
 
-  host = "localhost"
+  host = System.get_env("PHX_HOST") || "localhost"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
   config :unfinal, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  check_origin =
+    case System.get_env("CHECK_ORIGIN") do
+      nil ->
+        raise """
+        environment variable CHECK_ORIGIN is missing.
+        Set to a comma-separated list of allowed origins:
+            CHECK_ORIGIN=https://unfinal.page,https://example.com
+        Or disable origin checking (not recommended):
+            CHECK_ORIGIN=false
+        """
+
+      "false" ->
+        false
+
+      origins ->
+        origins
+        |> String.split(",", trim: true)
+        |> Enum.map(&String.trim/1)
+    end
+
   config :unfinal, UnfinalWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
-    check_origin:
-      case System.get_env("CHECK_ORIGIN") do
-        nil -> true
-        origins -> String.split(origins, ",")
-      end,
+    check_origin: check_origin,
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
