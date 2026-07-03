@@ -5,7 +5,8 @@ defmodule UnfinalWeb.Endpoint do
     store: :cookie,
     key: "_unfinal_key",
     signing_salt: "KOV7UCMl",
-    same_site: "Lax"
+    same_site: "Lax",
+    max_age: 30 * 24 * 60 * 60
   ]
 
   @doc """
