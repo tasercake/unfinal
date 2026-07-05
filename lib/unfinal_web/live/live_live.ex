@@ -69,7 +69,8 @@ defmodule UnfinalWeb.LiveLive do
 
     excerpts = excerpts(active_paths, socket.assigns.excerpts)
 
-    {:noreply, assign(socket, active_paths: active_paths, sorted_paths: sorted_paths(), excerpts: excerpts)}
+    {:noreply,
+     assign(socket, active_paths: active_paths, sorted_paths: sorted_paths(), excerpts: excerpts)}
   end
 
   def handle_info({:content_updated, path, %{content: content}}, socket) do
@@ -131,8 +132,8 @@ defmodule UnfinalWeb.LiveLive do
     @topic
     |> Presence.list()
     |> Enum.map(fn {_key, %{metas: [meta | _]}} -> {meta.path, meta.joined_at} end)
+    |> Enum.reject(fn {path, _ts} -> root_namespace_path?(path) end)
     |> Enum.sort_by(fn {_, ts} -> -ts end)
-    |> Enum.map(fn {path, _} -> path end)
   end
 
   defp excerpts(active_paths, current_excerpts) do
@@ -157,12 +158,28 @@ defmodule UnfinalWeb.LiveLive do
   defp document_href("/" <> path), do: "/n/" <> path
   defp document_href(_path), do: "/n"
 
-  defp visible_recent(recent_edits, active_paths, limit \\ 10) do
+  defp root_namespace_path?("/"), do: true
+  defp root_namespace_path?("/__root__" <> _rest), do: true
+  defp root_namespace_path?(_path), do: false
+
+  defp time_ago(timestamp) when is_integer(timestamp) do
+    seconds = System.system_time(:second) - timestamp
+
+    cond do
+      seconds < 60 -> "#{seconds}s ago"
+      seconds < 3600 -> "#{div(seconds, 60)}m ago"
+      seconds < 86400 -> "#{div(seconds, 3600)}h ago"
+      true -> "#{div(seconds, 86400)}d ago"
+    end
+  end
+
+  defp visible_recent(recent_edits, active_paths, excerpts, limit \\ 10) do
     recent_edits
     |> Enum.reject(fn {path, _ts} -> MapSet.member?(active_paths, path) end)
+    |> Enum.reject(fn {path, _ts} -> root_namespace_path?(path) end)
+    |> Enum.reject(fn {path, _ts} -> excerpt(Map.get(excerpts, path, "")) == "" end)
     |> Enum.sort_by(fn {_, ts} -> -ts end)
     |> Enum.take(limit)
-    |> Enum.map(fn {path, _ts} -> path end)
   end
 
   @impl true
@@ -186,39 +203,52 @@ defmodule UnfinalWeb.LiveLive do
               <p class="mt-2 text-sm text-stone-500">Spy on works in progress ;)</p>
             </header>
 
-            <div :if={Enum.empty?(@active_paths)} class="rounded-2xl border border-stone-200 bg-white px-5 py-6 text-sm text-stone-500 shadow-sm shadow-stone-200/40">
+            <div
+              :if={Enum.empty?(@sorted_paths)}
+              class="rounded-2xl border border-stone-200 bg-white px-5 py-6 text-sm text-stone-500 shadow-sm shadow-stone-200/40"
+            >
               Nothing being edited right now.
             </div>
 
-            <div :if={!Enum.empty?(@active_paths)} class="space-y-3">
+            <div :if={!Enum.empty?(@sorted_paths)} class="space-y-3">
               <a
-                :for={path <- @sorted_paths}
+                :for={{path, _joined_at} <- @sorted_paths}
                 href={document_href(path)}
-                class="block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
+                class="relative block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
               >
-                <div class="truncate text-sm font-semibold text-stone-900">{path}</div>
-                <p :if={excerpt(Map.get(@excerpts, path, "")) != ""} class="mt-2 text-sm leading-6 text-stone-600">
+                <span class="absolute top-3 right-4 text-[11px] font-medium uppercase tracking-wider text-green-600">live</span>
+                <div class="truncate pr-12 text-sm font-semibold text-stone-900">{path}</div>
+                <p
+                  :if={excerpt(Map.get(@excerpts, path, "")) != ""}
+                  class="mt-2 text-sm leading-6 text-stone-600"
+                >
                   {excerpt(Map.get(@excerpts, path, ""))}
                 </p>
-                <p :if={excerpt(Map.get(@excerpts, path, "")) == ""} class="mt-2 text-sm italic leading-6 text-stone-400">
+                <p
+                  :if={excerpt(Map.get(@excerpts, path, "")) == ""}
+                  class="mt-2 text-sm italic leading-6 text-stone-400"
+                >
                   waiting for the first word...
                 </p>
               </a>
             </div>
 
-            <% visible_recent = visible_recent(@recent_edits, @active_paths) %>
+            <% visible_recent = visible_recent(@recent_edits, @active_paths, @excerpts) %>
 
             <div :if={visible_recent != []}>
               <hr class="my-8 border-stone-200" />
-              <h2 class="text-xl font-semibold tracking-tight">Recently edited</h2>
               <div class="mt-4 space-y-3">
                 <a
-                  :for={path <- visible_recent}
+                  :for={{path, timestamp} <- visible_recent}
                   href={document_href(path)}
-                  class="block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
+                  class="relative block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
                 >
-                  <div class="truncate text-sm font-semibold text-stone-900">{path}</div>
-                  <p :if={excerpt(Map.get(@excerpts, path, "")) != ""} class="mt-2 text-sm leading-6 text-stone-600">
+                  <span class="absolute top-3 right-4 text-[11px] text-stone-400">{time_ago(timestamp)}</span>
+                  <div class="truncate pr-16 text-sm font-semibold text-stone-900">{path}</div>
+                  <p
+                    :if={excerpt(Map.get(@excerpts, path, "")) != ""}
+                    class="mt-2 text-sm leading-6 text-stone-600"
+                  >
                     {excerpt(Map.get(@excerpts, path, ""))}
                   </p>
                 </a>
