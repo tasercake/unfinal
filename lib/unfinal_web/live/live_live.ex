@@ -8,6 +8,7 @@ defmodule UnfinalWeb.LiveLive do
   alias UnfinalWeb.Presence
 
   @topic "editing"
+  @stale_threshold_seconds 5 * 60
 
   @impl true
   def mount(_params, session, socket) do
@@ -29,7 +30,7 @@ defmodule UnfinalWeb.LiveLive do
       {:ok,
        assign(socket,
          active_paths: active_paths,
-         sorted_paths: sorted_paths(),
+         sorted_paths: sorted_paths(recent_edits),
          excerpts: excerpts,
          recent_edits: recent_edits,
          authenticated: authenticated,
@@ -71,7 +72,11 @@ defmodule UnfinalWeb.LiveLive do
     excerpts = excerpts(excerpt_paths, socket.assigns.excerpts)
 
     {:noreply,
-     assign(socket, active_paths: active_paths, sorted_paths: sorted_paths(), excerpts: excerpts)}
+     assign(socket,
+       active_paths: active_paths,
+       sorted_paths: sorted_paths(socket.assigns.recent_edits),
+       excerpts: excerpts
+     )}
   end
 
   def handle_info({:content_updated, path, %{content: content}}, socket) do
@@ -83,7 +88,8 @@ defmodule UnfinalWeb.LiveLive do
   end
 
   def handle_info({:edit, path, timestamp}, socket) do
-    socket = update(socket, :recent_edits, &Map.put(&1, path, timestamp))
+    recent_edits = Map.put(socket.assigns.recent_edits, path, timestamp)
+    socket = assign(socket, recent_edits: recent_edits, sorted_paths: sorted_paths(recent_edits))
 
     socket =
       if not MapSet.member?(socket.assigns.active_paths, path) do
@@ -128,12 +134,21 @@ defmodule UnfinalWeb.LiveLive do
     @topic |> Presence.list() |> Map.keys() |> MapSet.new()
   end
 
-  defp sorted_paths do
+  defp sorted_paths(recent_edits) do
+    now = System.system_time(:second)
+
     @topic
     |> Presence.list()
-    |> Enum.map(fn {_key, %{metas: [meta | _]}} -> {meta.path, meta.joined_at} end)
-    |> Enum.reject(fn {path, _ts} -> root_namespace_path?(path) end)
-    |> Enum.sort_by(fn {_, ts} -> -ts end)
+    |> Enum.map(fn {_key, %{metas: [meta | _]}} ->
+      last_edit = Map.get(recent_edits, meta.path, meta.joined_at)
+      {meta.path, meta.joined_at, last_edit}
+    end)
+    |> Enum.reject(fn {path, _joined_at, _last_edit} -> root_namespace_path?(path) end)
+    |> Enum.reject(fn {_path, _joined_at, last_edit} ->
+      now - last_edit > @stale_threshold_seconds
+    end)
+    |> Enum.sort_by(fn {_path, joined_at, _last_edit} -> -joined_at end)
+    |> Enum.map(fn {path, joined_at, _last_edit} -> {path, joined_at} end)
   end
 
   defp excerpts(active_paths, current_excerpts) do
@@ -233,7 +248,7 @@ defmodule UnfinalWeb.LiveLive do
               </a>
             </div>
 
-            <% visible_recent = visible_recent(@recent_edits, @active_paths, @excerpts) %>
+            <% visible_recent = visible_recent(@recent_edits, MapSet.new(@sorted_paths, &elem(&1, 0)), @excerpts) %>
 
             <div :if={visible_recent != []}>
               <hr class="my-8 border-stone-200" />
