@@ -67,7 +67,8 @@ defmodule UnfinalWeb.LiveLive do
       Phoenix.PubSub.unsubscribe(Unfinal.PubSub, Documents.topic(path))
     end
 
-    excerpts = excerpts(active_paths, socket.assigns.excerpts)
+    excerpt_paths = MapSet.union(active_paths, MapSet.new(Map.keys(socket.assigns.recent_edits)))
+    excerpts = excerpts(excerpt_paths, socket.assigns.excerpts)
 
     {:noreply,
      assign(socket, active_paths: active_paths, sorted_paths: sorted_paths(), excerpts: excerpts)}
@@ -85,8 +86,7 @@ defmodule UnfinalWeb.LiveLive do
     socket = update(socket, :recent_edits, &Map.put(&1, path, timestamp))
 
     socket =
-      if not MapSet.member?(socket.assigns.active_paths, path) and
-           not Map.has_key?(socket.assigns.excerpts, path) do
+      if not MapSet.member?(socket.assigns.active_paths, path) do
         update(socket, :excerpts, &Map.put(&1, path, Documents.get(path).content))
       else
         socket
