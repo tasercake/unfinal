@@ -349,12 +349,12 @@ defmodule UnfinalWeb.EditorLive do
 
               <div
                 :if={@path != @root_page_path and @path not in @page_paths}
-                class="group flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                class="group relative rounded-lg bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
               >
-                <a href={@path} class="flex-1 truncate">
+                <a href={@path} class="block truncate rounded-lg px-3 py-2 pr-8">
                   {display_page_path(@path)}
                 </a>
-                <div :if={@writer?} class="relative">
+                <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
                   <button
                     type="button"
                     phx-click="toggle_page_menu"
@@ -382,15 +382,15 @@ defmodule UnfinalWeb.EditorLive do
               <div
                 :for={path <- @page_paths}
                 class={[
-                  "group flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
+                  "group relative rounded-lg hover:bg-white/50 hover:text-stone-950",
                   path == @path &&
                     "bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                 ]}
               >
-                <a href={path} class="flex-1 truncate">
+                <a href={path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
                   {display_page_path(path)}
                 </a>
-                <div :if={@writer?} class="relative">
+                <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
                   <button
                     type="button"
                     phx-click="toggle_page_menu"
