@@ -311,7 +311,7 @@ defmodule UnfinalWeb.EditorLive do
                 class={[
                   "block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
                   @root_page_path == @path &&
-                    "bg-white/70 py-2 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                    "bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                 ]}
                 href={@root_page_path}
               >
@@ -351,7 +351,7 @@ defmodule UnfinalWeb.EditorLive do
                 :if={@path != @root_page_path and @path not in @page_paths}
                 class="group relative rounded-lg bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
               >
-                <a href={@path} class="block truncate rounded-lg px-3 py-2 pr-8">
+                <a href={@path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
                   {display_page_path(@path)}
                 </a>
                 <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
