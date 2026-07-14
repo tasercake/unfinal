@@ -371,6 +371,7 @@ cat >"${tmp_service}" <<EOF_SERVICE
 [Unit]
 Description=Unfinal Phoenix app
 After=network.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -380,7 +381,7 @@ EnvironmentFile=${ENV_FILE}
 Environment=PATH=/opt/elixir-1.16.3/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/bin/bash -lc 'exec mix phx.server'
 Restart=on-failure
-RestartSec=5
+RestartSec=1s
 
 [Install]
 WantedBy=multi-user.target
