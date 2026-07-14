@@ -65,14 +65,13 @@ defmodule UnfinalWeb.Layouts do
               class="mx-3 my-2 border-t border-stone-200/80"
             />
 
-            <div
+            <a
               :for={path <- @page_paths}
-              class="flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950"
+              href={path}
+              class="block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950"
             >
-              <a href={path} class="flex-1 truncate">
-                {display_page_path(path)}
-              </a>
-            </div>
+              {display_page_path(path)}
+            </a>
           </div>
         </nav>
 
