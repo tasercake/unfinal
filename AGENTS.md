@@ -6,6 +6,8 @@ Anti-draft public live-writing tool for fighting perfectionism: if text exists, 
 
 Unfinal is a tiny writing space where each URL is a live document. Visitors can read in real time; authenticated writers can edit, all changes are public in real-time.
 
+See `FEATURES.md` for the canonical concise list of product and internal features.
+
 ## Tech Stack
 
 Elixir/Phoenix LiveView app with Phoenix PubSub, Clerk OAuth/OIDC auth stored in signed session cookies, `.env` config, and S3-compatible object storage for document persistence.
