@@ -6,6 +6,7 @@ defmodule UnfinalWeb.EditorLive do
   alias Unfinal.NamespaceStore
   alias Unfinal.PageIndex
   alias Unfinal.Writers
+  alias UnfinalWeb.Presence
 
   @impl true
   def mount(params, session, socket) do
@@ -23,9 +24,20 @@ defmodule UnfinalWeb.EditorLive do
     claimed_namespace = claimed_namespace(session)
     viewed_namespace = viewed_namespace(segments)
     writer? = writer?(segments, session, claimed_namespace)
+    reader_topic = reader_topic(storage_path)
 
-    if connected?(socket) and writer?,
-      do: UnfinalWeb.Presence.track(self(), "editing", storage_path, %{path: storage_path, joined_at: System.system_time(:second)})
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Unfinal.PubSub, reader_topic)
+
+      if writer? do
+        Presence.track(self(), "editing", storage_path, %{
+          path: storage_path,
+          joined_at: System.system_time(:second)
+        })
+      else
+        Presence.track(self(), reader_topic, reader_key(), %{})
+      end
+    end
 
     if connected?(socket) and not writer?,
       do: Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic(storage_path))
@@ -48,6 +60,8 @@ defmodule UnfinalWeb.EditorLive do
         claimed_namespace: claimed_namespace,
         viewed_namespace: viewed_namespace,
         writer?: writer?,
+        reader_topic: reader_topic,
+        reader_count: if(connected?(socket), do: reader_count(reader_topic), else: 0),
         show_claim_link?: show_claim_link?(session, claimed_namespace),
         show_pages_nav?: show_pages_nav?(segments),
         root_page_path: root_page_path(segments, path, true),
@@ -154,7 +168,15 @@ defmodule UnfinalWeb.EditorLive do
   def handle_event("close_mobile_menu", _params, socket) do
     {:noreply, assign(socket, mobile_menu_open: false)}
   end
+
   @impl true
+  def handle_info(
+        %Phoenix.Socket.Broadcast{topic: reader_topic, event: "presence_diff"},
+        %{assigns: %{reader_topic: reader_topic}} = socket
+      ) do
+    {:noreply, assign(socket, reader_count: reader_count(reader_topic))}
+  end
+
   def handle_info(
         {:content_updated, storage_path, %{content: "", etag: nil, revision: 0}},
         %{assigns: %{storage_path: storage_path}} = socket
@@ -267,6 +289,23 @@ defmodule UnfinalWeb.EditorLive do
   defp display_page_path("/n" <> path), do: path
   defp display_page_path(path), do: path
 
+  @spec reader_topic(String.t()) :: String.t()
+  defp reader_topic(storage_path), do: "readers:" <> storage_path
+
+  @spec reader_key() :: String.t()
+  defp reader_key, do: "#{node()}:#{inspect(self())}"
+
+  @spec reader_count(String.t()) :: non_neg_integer()
+  defp reader_count(topic) do
+    topic
+    |> Presence.list()
+    |> Enum.reduce(0, fn {_key, %{metas: metas}}, count -> count + length(metas) end)
+  end
+
+  @spec reader_count_label(non_neg_integer()) :: String.t()
+  defp reader_count_label(1), do: "1 person reading"
+  defp reader_count_label(count), do: "#{count} people reading"
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -300,161 +339,161 @@ defmodule UnfinalWeb.EditorLive do
               if(@mobile_menu_open, do: "flex", else: "hidden")
             ]}
           >
-
-          <nav :if={@show_pages_nav?} id="pages-nav" class="mt-7 text-sm" aria-label="Pages">
-            <h2 class="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">
-              Pages
-            </h2>
-            <div class="space-y-1 text-stone-500">
-              <a
-                :if={@root_page_path}
-                class={[
-                  "block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
-                  @root_page_path == @path &&
-                    "bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
-                ]}
-                href={@root_page_path}
-              >
-                {display_page_path(@root_page_path)}
-              </a>
-
-              <div
-                :if={
-                  @root_page_path &&
-                    ((is_binary(@claimed_namespace) and @viewed_namespace == @claimed_namespace) or
-                       @page_paths != [])
-                }
-                class="mx-3 my-2 border-t border-stone-200/80"
-              />
-
-              <.form
-                :if={is_binary(@claimed_namespace) and @viewed_namespace == @claimed_namespace}
-                for={%{}}
-                id="new-page-form"
-                phx-submit="open_new_page"
-              >
-                <label class="sr-only" for="new-page-path">New page path</label>
-                <div class="group flex items-center rounded-lg px-3 py-1.5 text-stone-400 hover:bg-white/50 focus-within:bg-white/70 focus-within:text-stone-950 focus-within:shadow-sm focus-within:shadow-stone-200/50">
-                  <span class="mr-1 text-stone-300 group-focus-within:text-stone-400">+</span>
-                  <span class="text-stone-300 group-focus-within:text-stone-400">/{@claimed_namespace}/</span>
-                  <input
-                    id="new-page-path"
-                    name="path"
-                    class="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-300"
-                    placeholder="new-page"
-                  />
-                </div>
-                <button class="sr-only" type="submit">Open new page</button>
-              </.form>
-
-              <div
-                :if={@path != @root_page_path and @path not in @page_paths}
-                class="group relative rounded-lg bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
-              >
-                <a href={@path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
-                  {display_page_path(@path)}
-                </a>
-                <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
-                  <button
-                    type="button"
-                    phx-click="toggle_page_menu"
-                    phx-value-path={@path}
-                    class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 group-hover:block"
-                  >
-                    <span class="hero-ellipsis-vertical h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div
-                  :if={@writer? and @menu_open_path == @path}
-                  phx-click-away="close_page_menu"
-                  class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
+            <nav :if={@show_pages_nav?} id="pages-nav" class="mt-7 text-sm" aria-label="Pages">
+              <h2 class="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">
+                Pages
+              </h2>
+              <div class="space-y-1 text-stone-500">
+                <a
+                  :if={@root_page_path}
+                  class={[
+                    "block rounded-lg px-3 py-1.5 hover:bg-white/50 hover:text-stone-950",
+                    @root_page_path == @path &&
+                      "bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                  ]}
+                  href={@root_page_path}
                 >
-                  <button
-                    phx-click="confirm_delete"
-                    phx-value-path={@path}
-                    class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
+                  {display_page_path(@root_page_path)}
+                </a>
+                <div
+                  :if={
+                    @root_page_path &&
+                      ((is_binary(@claimed_namespace) and @viewed_namespace == @claimed_namespace) or
+                         @page_paths != [])
+                  }
+                  class="mx-3 my-2 border-t border-stone-200/80"
+                />
+
+                <.form
+                  :if={is_binary(@claimed_namespace) and @viewed_namespace == @claimed_namespace}
+                  for={%{}}
+                  id="new-page-form"
+                  phx-submit="open_new_page"
+                >
+                  <label class="sr-only" for="new-page-path">New page path</label>
+                  <div class="group flex items-center rounded-lg px-3 py-1.5 text-stone-400 hover:bg-white/50 focus-within:bg-white/70 focus-within:text-stone-950 focus-within:shadow-sm focus-within:shadow-stone-200/50">
+                    <span class="mr-1 text-stone-300 group-focus-within:text-stone-400">+</span>
+                    <span class="text-stone-300 group-focus-within:text-stone-400">/{@claimed_namespace}/</span>
+                    <input
+                      id="new-page-path"
+                      name="path"
+                      class="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-300"
+                      placeholder="new-page"
+                    />
+                  </div>
+                  <button class="sr-only" type="submit">Open new page</button>
+                </.form>
+
+                <div
+                  :if={@path != @root_page_path and @path not in @page_paths}
+                  class="group relative rounded-lg bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                >
+                  <a href={@path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
+                    {display_page_path(@path)}
+                  </a>
+                  <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
+                    <button
+                      type="button"
+                      phx-click="toggle_page_menu"
+                      phx-value-path={@path}
+                      class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 group-hover:block"
+                    >
+                      <span class="hero-ellipsis-vertical h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div
+                    :if={@writer? and @menu_open_path == @path}
+                    phx-click-away="close_page_menu"
+                    class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
                   >
-                    Delete
-                  </button>
+                    <button
+                      phx-click="confirm_delete"
+                      phx-value-path={@path}
+                      class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  :for={path <- @page_paths}
+                  class={[
+                    "group relative rounded-lg hover:bg-white/50 hover:text-stone-950",
+                    path == @path &&
+                      "bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
+                  ]}
+                >
+                  <a href={path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
+                    {display_page_path(path)}
+                  </a>
+                  <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
+                    <button
+                      type="button"
+                      phx-click="toggle_page_menu"
+                      phx-value-path={path}
+                      class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 group-hover:block"
+                    >
+                      <span class="hero-ellipsis-vertical h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div
+                    :if={@writer? and @menu_open_path == path}
+                    phx-click-away="close_page_menu"
+                    class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
+                  >
+                    <button
+                      phx-click="confirm_delete"
+                      phx-value-path={path}
+                      class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
+            </nav>
 
-              <div
-                :for={path <- @page_paths}
-                class={[
-                  "group relative rounded-lg hover:bg-white/50 hover:text-stone-950",
-                  path == @path &&
-                    "bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
-                ]}
-              >
-                <a href={path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
-                  {display_page_path(path)}
-                </a>
-                <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
-                  <button
-                    type="button"
-                    phx-click="toggle_page_menu"
-                    phx-value-path={path}
-                    class="hidden rounded p-0.5 text-stone-400 hover:bg-stone-200 group-hover:block"
-                  >
-                    <span class="hero-ellipsis-vertical h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div
-                  :if={@writer? and @menu_open_path == path}
-                  phx-click-away="close_page_menu"
-                  class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
-                >
-                  <button
-                    phx-click="confirm_delete"
-                    phx-value-path={path}
-                    class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
-                  >
-                    Delete
-                  </button>
-                </div>
+            <section id="login-bar" class="mt-auto shrink-0 border-t border-stone-200/80 pt-4 text-sm">
+              <div class="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">
+                Account
               </div>
-            </div>
-          </nav>
-
-          <section id="login-bar" class="mt-auto shrink-0 border-t border-stone-200/80 pt-4 text-sm">
-            <div class="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">
-              Account
-            </div>
-            <a
-              :if={@show_claim_link?}
-              id="claim-page-link"
-              class="mb-3 block rounded-lg bg-white/70 px-3 py-2 font-medium text-stone-900 shadow-sm shadow-stone-200/50 ring-1 ring-stone-200/60 hover:bg-white"
-              href={~p"/claim"}
-            >Claim your page</a>
-            <a
-              :if={!@authenticated}
-              class="underline underline-offset-4"
-              href={~p"/login?return_to=#{@path}"}
-            >Login to edit</a>
-            <div :if={@authenticated}>
-              <p class="truncate text-stone-700">{@user["email"]}</p>
               <a
-                class="mt-1 block text-stone-600 underline underline-offset-4 hover:text-stone-950"
-                href={if @claimed_namespace, do: "/n/#{@claimed_namespace}", else: "/claim"}
-              >My notebook</a>
+                :if={@show_claim_link?}
+                id="claim-page-link"
+                class="mb-3 block rounded-lg bg-white/70 px-3 py-2 font-medium text-stone-900 shadow-sm shadow-stone-200/50 ring-1 ring-stone-200/60 hover:bg-white"
+                href={~p"/claim"}
+              >Claim your page</a>
               <a
-                id="logout-link"
-                class="mt-1 inline-block text-stone-500 underline underline-offset-4 hover:text-stone-950"
-                href={~p"/logout?return_to=#{@path}"}
-              >Logout</a>
-            </div>
-          </section>
-
+                :if={!@authenticated}
+                class="underline underline-offset-4"
+                href={~p"/login?return_to=#{@path}"}
+              >Login to edit</a>
+              <div :if={@authenticated}>
+                <p class="truncate text-stone-700">{@user["email"]}</p>
+                <a
+                  class="mt-1 block text-stone-600 underline underline-offset-4 hover:text-stone-950"
+                  href={if @claimed_namespace, do: "/n/#{@claimed_namespace}", else: "/claim"}
+                >My notebook</a>
+                <a
+                  id="logout-link"
+                  class="mt-1 inline-block text-stone-500 underline underline-offset-4 hover:text-stone-950"
+                  href={~p"/logout?return_to=#{@path}"}
+                >Logout</a>
+              </div>
+            </section>
           </div>
         </aside>
 
         <main class="flex min-h-0 min-w-0 flex-col">
           <header class="relative flex h-11 shrink-0 items-center px-6 text-xs text-stone-400">
-            <div class="truncate">{@path}</div>
+            <div class="truncate pr-4">{@path}</div>
             <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[11px] uppercase tracking-[0.18em] text-stone-300">
               <span :if={@writer?}>Live</span>
               <span :if={!@writer?}>Read only</span>
+            </div>
+            <div id="reader-count" class="ml-auto shrink-0" role="status" aria-live="polite">
+              {reader_count_label(@reader_count)}
             </div>
           </header>
 

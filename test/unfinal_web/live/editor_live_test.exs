@@ -101,6 +101,32 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert html =~ ~s(href="/login?return_to=%2Fn%2Fnotes")
   end
 
+  test "reader count updates when readers join the same document", %{conn: conn} do
+    {:ok, first_reader, html} = live(conn, "/n/reader-count")
+
+    assert html =~ ~s(id="reader-count")
+    assert html =~ "1 person reading"
+
+    {:ok, second_reader, _html} = live(conn, "/n/reader-count")
+
+    assert_eventually(fn -> render(first_reader) =~ "2 people reading" end)
+    assert_eventually(fn -> render(second_reader) =~ "2 people reading" end)
+  end
+
+  test "writer sees reader count without counting as a reader", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    writer_conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, writer, html} = live(writer_conn, "/n/alpha/audience")
+
+    assert html =~ "0 people reading"
+
+    {:ok, _reader, reader_html} = live(build_conn(), "/n/alpha/audience")
+
+    assert reader_html =~ "1 person reading"
+    assert_eventually(fn -> render(writer) =~ "1 person reading" end)
+  end
+
   test "readonly document does not add template whitespace to content", %{conn: conn} do
     save_document("/plain", "hello")
 
