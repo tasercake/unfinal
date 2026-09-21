@@ -4,11 +4,16 @@ defmodule Unfinal.PageIndexTest do
   alias Unfinal.Documents
   alias Unfinal.PageIndex
   alias Unfinal.SQLiteCleanup
+  alias Unfinal.SQLiteFixtures
 
   setup do
     SQLiteCleanup.clear_all()
     PageIndex.clear()
     Documents.clear()
+
+    for namespace <- ["alpha", "testns", "spy-ns"] do
+      SQLiteFixtures.claim_namespace(namespace)
+    end
 
     on_exit(fn ->
       PageIndex.clear()
