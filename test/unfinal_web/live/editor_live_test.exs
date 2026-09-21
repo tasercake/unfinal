@@ -204,6 +204,16 @@ defmodule UnfinalWeb.EditorLiveTest do
     refute links |> Floki.text() =~ "/n/alpha/rainriver"
   end
 
+  test "new page form replaces spaces with dashes on submit", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    assert {:error, {:live_redirect, %{to: "/n/alpha/my-new-page"}}} =
+             view |> form("#new-page-form", %{path: "my new page"}) |> render_submit()
+  end
+
   test "claimed user viewing another namespace sees its pages but no new page form", %{conn: conn} do
     :ok = NamespaceStore.claim("kp", %{"id" => "owner", "email" => "owner@example.com"})
     :ok = Unfinal.PageIndex.upsert("kp", "/private", ~U[2026-06-24 00:00:00Z])
