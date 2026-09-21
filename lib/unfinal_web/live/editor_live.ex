@@ -102,7 +102,7 @@ defmodule UnfinalWeb.EditorLive do
         %{assigns: %{claimed_namespace: namespace, viewed_namespace: namespace}} = socket
       )
       when is_binary(namespace) do
-    slug = path |> String.trim() |> String.trim_leading("/")
+    slug = path |> String.trim() |> String.trim_leading("/") |> String.replace(" ", "-")
 
     if DocumentPath.valid_segments?([namespace, slug]) do
       {:noreply, push_navigate(socket, to: namespace_path(namespace, slug))}
