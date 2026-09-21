@@ -326,6 +326,35 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert [%{path: "/notes"}, %{path: "/"}] = Unfinal.PageIndex.list("alpha")
   end
 
+  test "writer saves a document title that readers can see", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    owner_conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, writer_view, writer_html} = live(owner_conn, "/n/alpha/notes")
+
+    assert writer_html =~ ~s(id="document-title-input")
+
+    render_hook(writer_view, "save", %{
+      "title" => "Field notes",
+      "content" => "Today I learned"
+    })
+
+    assert_eventually(fn -> Map.get(Documents.get("/alpha/notes"), :title) == "Field notes" end)
+
+    {:ok, _reader_view, reader_html} = live(conn, "/n/alpha/notes")
+
+    assert reader_html =~ ~s(<h1 id="document-title")
+    assert reader_html =~ "Field notes"
+    assert reader_html =~ ~r/<title[^>]*>Field notes<\/title>/
+    assert reader_html =~ ~s(<meta property="og:title" content="Field notes")
+
+    page_nav_text =
+      reader_html |> Floki.parse_document!() |> Floki.find("#pages-nav") |> Floki.text()
+
+    assert page_nav_text =~ "Field notes"
+    refute page_nav_text =~ "/alpha/notes"
+  end
+
   test "writer save ack is fast and document persists through SQLite", %{conn: conn} do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
     conn = logged_in(conn, "owner", "owner@example.com")
@@ -988,7 +1017,7 @@ defmodule UnfinalWeb.EditorLiveTest do
   defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 
   defp save_document(path, content) do
-    case SqliteDocuments.put(path, content, nil, 0) do
+    case SqliteDocuments.put(path, "", content, nil, 0) do
       {:ok, _doc} ->
         :ok
 

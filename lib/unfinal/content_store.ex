@@ -11,11 +11,12 @@ defmodule Unfinal.ContentStore do
 
   defmodule Document do
     @moduledoc "Object-store document snapshot."
-    @enforce_keys [:path, :content, :etag, :revision, :write_id]
-    defstruct [:path, :content, :etag, :revision, :write_id]
+    @enforce_keys [:path, :title, :content, :etag, :revision, :write_id]
+    defstruct [:path, :title, :content, :etag, :revision, :write_id]
 
     @type t :: %__MODULE__{
             path: String.t(),
+            title: String.t(),
             content: String.t(),
             etag: String.t() | nil,
             revision: non_neg_integer(),
@@ -24,11 +25,13 @@ defmodule Unfinal.ContentStore do
   end
 
   @type path :: String.t()
+  @type title :: String.t()
   @type content :: String.t()
   @type put_result :: {:ok, Document.t()} | {:stale, Document.t()} | {:error, term()}
 
   @callback get(String.t()) :: {:ok, Document.t()} | {:error, term()}
-  @callback put(String.t(), content(), String.t() | nil, non_neg_integer()) :: put_result()
+  @callback put(String.t(), title(), content(), String.t() | nil, non_neg_integer()) ::
+              put_result()
   @callback delete(String.t(), String.t() | nil, non_neg_integer()) :: put_result()
   @callback clear() :: :ok
 
@@ -36,7 +39,8 @@ defmodule Unfinal.ContentStore do
   def object_key(path), do: @key_prefix <> "/" <> sha256(normalize_path(path)) <> ".txt"
 
   @spec missing(path()) :: Document.t()
-  def missing(path), do: %Document{path: path, content: "", etag: nil, revision: 0, write_id: nil}
+  def missing(path),
+    do: %Document{path: path, title: "", content: "", etag: nil, revision: 0, write_id: nil}
 
   @spec normalize_path(path()) :: path()
   def normalize_path(""), do: "/"

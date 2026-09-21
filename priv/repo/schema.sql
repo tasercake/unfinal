@@ -6,7 +6,7 @@ CREATE TABLE documents (
   content TEXT NOT NULL DEFAULT '',
   revision INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
-);
+, "title" TEXT DEFAULT '' NOT NULL);
 CREATE INDEX documents_namespace_updated_idx
 ON documents(namespace, updated_at DESC)
 ;
@@ -28,3 +28,4 @@ ON document_redirects(target_path)
 INSERT INTO schema_migrations VALUES(20260630000000,'0000-00-00T00:00:00');
 INSERT INTO schema_migrations VALUES(20260701000000,'0000-00-00T00:00:00');
 INSERT INTO schema_migrations VALUES(20260921000000,'0000-00-00T00:00:00');
+INSERT INTO schema_migrations VALUES(20260921000001,'0000-00-00T00:00:00');

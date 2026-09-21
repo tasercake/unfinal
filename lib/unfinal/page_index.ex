@@ -5,7 +5,7 @@ defmodule Unfinal.PageIndex do
 
   @topic_prefix "page_index:"
 
-  @type entry :: %{path: String.t(), updated_at: String.t()}
+  @type entry :: %{path: String.t(), title: String.t(), updated_at: String.t()}
 
   @spec topic(String.t()) :: String.t()
   def topic(namespace), do: @topic_prefix <> Base.url_encode64(namespace, padding: false)
@@ -22,10 +22,16 @@ defmodule Unfinal.PageIndex do
   @spec upsert(String.t(), String.t(), DateTime.t()) :: :ok | {:error, term()}
   def upsert(namespace, path, %DateTime{} = updated_at)
       when is_binary(namespace) and is_binary(path) do
+    upsert(namespace, path, updated_at, "")
+  end
+
+  @spec upsert(String.t(), String.t(), DateTime.t(), String.t()) :: :ok | {:error, term()}
+  def upsert(namespace, path, %DateTime{} = updated_at, title)
+      when is_binary(namespace) and is_binary(path) and is_binary(title) do
     if valid_namespace?(namespace) and DocumentPath.valid_relative_path?(path) do
       updated_at_iso = DateTime.to_iso8601(updated_at)
 
-      case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso) do
+      case Unfinal.SqliteDocuments.touch_page(namespace, path, updated_at_iso, title) do
         :ok ->
           entries = Unfinal.SqliteDocuments.list_namespace(namespace)
 

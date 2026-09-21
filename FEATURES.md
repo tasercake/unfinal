@@ -18,7 +18,8 @@ Unfinal is an anti-draft public live-writing tool for publishing text as soon as
 14. Writer presence tracks active editing activity for live documents.
 15. Login is powered by Clerk; the current implementation uses Clerk OAuth because the app has no JavaScript frontend framework.
 16. Edits are automatically persisted while the writer types.
-17. Documents are durably stored in SQLite.
-18. Production backups are supported through Litestream to S3/R2-compatible storage.
-19. Deployment automation builds assets, runs migrations, validates backup restore, and restarts services.
-20. CI checks cover tests, migrations, schema consistency, and deployment readiness.
+17. Documents have editable titles shown to readers, in navigation, and in browser metadata.
+18. Documents are durably stored in SQLite.
+19. Production backups are supported through Litestream to S3/R2-compatible storage.
+20. Deployment automation builds assets, runs migrations, validates backup restore, and restarts services.
+21. CI checks cover tests, migrations, schema consistency, and deployment readiness.

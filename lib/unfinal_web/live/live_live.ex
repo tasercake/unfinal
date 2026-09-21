@@ -25,13 +25,16 @@ defmodule UnfinalWeb.LiveLive do
 
       recent_edits = seed_recent_edits()
       recent_paths = Map.keys(recent_edits) -- MapSet.to_list(active_paths)
-      excerpts = excerpts(MapSet.union(active_paths, MapSet.new(recent_paths)), %{})
+      visible_paths = MapSet.union(active_paths, MapSet.new(recent_paths))
+      excerpts = excerpts(visible_paths, %{})
+      titles = titles(visible_paths, %{})
 
       {:ok,
        assign(socket,
          active_paths: active_paths,
          sorted_paths: sorted_paths(recent_edits),
          excerpts: excerpts,
+         titles: titles,
          recent_edits: recent_edits,
          authenticated: authenticated,
          user: user,
@@ -45,6 +48,7 @@ defmodule UnfinalWeb.LiveLive do
          active_paths: MapSet.new(),
          sorted_paths: [],
          excerpts: %{},
+         titles: %{},
          recent_edits: %{},
          authenticated: authenticated,
          user: user,
@@ -70,18 +74,25 @@ defmodule UnfinalWeb.LiveLive do
 
     excerpt_paths = MapSet.union(active_paths, MapSet.new(Map.keys(socket.assigns.recent_edits)))
     excerpts = excerpts(excerpt_paths, socket.assigns.excerpts)
+    titles = titles(excerpt_paths, socket.assigns.titles)
 
     {:noreply,
      assign(socket,
        active_paths: active_paths,
        sorted_paths: sorted_paths(socket.assigns.recent_edits),
-       excerpts: excerpts
+       excerpts: excerpts,
+       titles: titles
      )}
   end
 
-  def handle_info({:content_updated, path, %{content: content}}, socket) do
+  def handle_info({:content_updated, path, %{content: content} = document}, socket) do
     if MapSet.member?(socket.assigns.active_paths, path) do
-      {:noreply, update(socket, :excerpts, &Map.put(&1, path, content))}
+      title = Map.get(document, :title, Map.get(socket.assigns.titles, path, ""))
+
+      {:noreply,
+       socket
+       |> update(:excerpts, &Map.put(&1, path, content))
+       |> update(:titles, &Map.put(&1, path, title))}
     else
       {:noreply, socket}
     end
@@ -93,7 +104,11 @@ defmodule UnfinalWeb.LiveLive do
 
     socket =
       if not MapSet.member?(socket.assigns.active_paths, path) do
-        update(socket, :excerpts, &Map.put(&1, path, Documents.get(path).content))
+        document = Documents.get(path)
+
+        socket
+        |> update(:excerpts, &Map.put(&1, path, document.content))
+        |> update(:titles, &Map.put(&1, path, document.title))
       else
         socket
       end
@@ -159,6 +174,19 @@ defmodule UnfinalWeb.LiveLive do
 
   defp initial_content(path, excerpts) do
     Map.get_lazy(excerpts, path, fn -> Documents.get(path).content end)
+  end
+
+  defp titles(paths, current_titles) do
+    Map.new(paths, fn path ->
+      {path, Map.get_lazy(current_titles, path, fn -> Documents.get(path).title end)}
+    end)
+  end
+
+  defp document_title(path, titles) do
+    case titles |> Map.get(path, "") |> String.trim() do
+      "" -> path
+      title -> title
+    end
   end
 
   defp excerpt(content) when is_binary(content) do
@@ -232,7 +260,9 @@ defmodule UnfinalWeb.LiveLive do
                 class="relative block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
               >
                 <span class="absolute top-3 right-4 text-[11px] font-medium uppercase tracking-wider text-green-600">live</span>
-                <div class="truncate pr-12 text-sm font-semibold text-stone-900">{path}</div>
+                <div class="truncate pr-12 text-sm font-semibold text-stone-900">
+                  {document_title(path, @titles)}
+                </div>
                 <p
                   :if={excerpt(Map.get(@excerpts, path, "")) != ""}
                   class="mt-2 text-sm leading-6 text-stone-600"
@@ -248,7 +278,8 @@ defmodule UnfinalWeb.LiveLive do
               </a>
             </div>
 
-            <% visible_recent = visible_recent(@recent_edits, MapSet.new(@sorted_paths, &elem(&1, 0)), @excerpts) %>
+            <% visible_recent =
+              visible_recent(@recent_edits, MapSet.new(@sorted_paths, &elem(&1, 0)), @excerpts) %>
 
             <div :if={visible_recent != []}>
               <hr class="my-8 border-stone-200" />
@@ -259,7 +290,9 @@ defmodule UnfinalWeb.LiveLive do
                   class="relative block rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 transition hover:border-stone-300 hover:shadow-md"
                 >
                   <span class="absolute top-3 right-4 text-[11px] text-stone-400">{time_ago(timestamp)}</span>
-                  <div class="truncate pr-16 text-sm font-semibold text-stone-900">{path}</div>
+                  <div class="truncate pr-16 text-sm font-semibold text-stone-900">
+                    {document_title(path, @titles)}
+                  </div>
                   <p
                     :if={excerpt(Map.get(@excerpts, path, "")) != ""}
                     class="mt-2 text-sm leading-6 text-stone-600"

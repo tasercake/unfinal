@@ -5,7 +5,8 @@ defmodule Unfinal.FailingObjectStore do
   def get(_path), do: {:error, :read_failed}
 
   @impl true
-  def put(_path, _content, _base_etag, _base_revision), do: {:error, :write_not_supported}
+  def put(_path, _title, _content, _base_etag, _base_revision),
+    do: {:error, :write_not_supported}
 
   def get_object(_key), do: {:error, :read_failed}
 

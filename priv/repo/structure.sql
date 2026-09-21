@@ -6,7 +6,7 @@ CREATE TABLE documents (
   content TEXT NOT NULL DEFAULT '',
   revision INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
-);
+, "title" TEXT DEFAULT '' NOT NULL);
 CREATE INDEX documents_namespace_updated_idx
 ON documents(namespace, updated_at DESC)
 ;
@@ -18,3 +18,5 @@ CREATE TABLE namespace_claims (
 CREATE UNIQUE INDEX "namespace_claims_user_id_index" ON "namespace_claims" ("user_id");
 INSERT INTO schema_migrations VALUES(20260630000000,'2026-07-02T01:21:19');
 INSERT INTO schema_migrations VALUES(20260701000000,'2026-07-02T01:21:19');
+INSERT INTO schema_migrations VALUES(20260921000000,'2026-09-21T08:59:01');
+INSERT INTO schema_migrations VALUES(20260921000001,'2026-09-21T08:59:01');

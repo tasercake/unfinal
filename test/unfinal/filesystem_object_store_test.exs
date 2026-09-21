@@ -43,9 +43,15 @@ defmodule Unfinal.FilesystemObjectStoreTest do
   end
 
   test "creates and updates JSON envelope documents" do
-    assert {:ok, created} = FilesystemObjectStore.put("/notes", "hello", nil, 0)
+    assert {:ok, created} = FilesystemObjectStore.put("/notes", "Notes", "hello", nil, 0)
 
-    assert %ContentStore.Document{path: "/notes", content: "hello", revision: 1, etag: etag1} =
+    assert %ContentStore.Document{
+             path: "/notes",
+             title: "Notes",
+             content: "hello",
+             revision: 1,
+             etag: etag1
+           } =
              created
 
     assert is_binary(etag1)
@@ -53,19 +59,22 @@ defmodule Unfinal.FilesystemObjectStoreTest do
     assert {:ok, fetched} = FilesystemObjectStore.get("/notes")
     assert fetched == created
 
-    assert {:ok, updated} = FilesystemObjectStore.put("/notes", "world", etag1, 1)
-    assert %ContentStore.Document{content: "world", revision: 2, etag: etag2} = updated
+    assert {:ok, updated} = FilesystemObjectStore.put("/notes", "New notes", "world", etag1, 1)
+
+    assert %ContentStore.Document{title: "New notes", content: "world", revision: 2, etag: etag2} =
+             updated
+
     assert etag2 != etag1
   end
 
   test "stale write returns current document and leaves file unchanged" do
-    assert {:ok, first} = FilesystemObjectStore.put("/notes", "first", nil, 0)
+    assert {:ok, first} = FilesystemObjectStore.put("/notes", "", "first", nil, 0)
 
     assert {:ok, second} =
-             FilesystemObjectStore.put("/notes", "second", first.etag, first.revision)
+             FilesystemObjectStore.put("/notes", "", "second", first.etag, first.revision)
 
     assert {:stale, ^second} =
-             FilesystemObjectStore.put("/notes", "stale", first.etag, first.revision)
+             FilesystemObjectStore.put("/notes", "", "stale", first.etag, first.revision)
 
     assert {:ok, ^second} = FilesystemObjectStore.get("/notes")
   end
@@ -73,7 +82,7 @@ defmodule Unfinal.FilesystemObjectStoreTest do
   test "clear deletes only managed document JSON files", %{data_dir: data_dir} do
     File.mkdir_p!(data_dir)
     File.write!(Path.join(data_dir, "namespaces.txt"), "alpha\tone@example.com\n")
-    assert {:ok, _doc} = FilesystemObjectStore.put("/notes", "body", nil, 0)
+    assert {:ok, _doc} = FilesystemObjectStore.put("/notes", "", "body", nil, 0)
 
     assert :ok = FilesystemObjectStore.clear()
 
@@ -87,7 +96,7 @@ defmodule Unfinal.FilesystemObjectStoreTest do
     Application.put_env(:unfinal, :filesystem_object_store, write_delay_ms: 0)
 
     {microseconds, {:ok, _doc}} =
-      :timer.tc(fn -> FilesystemObjectStore.put("/fast", "body", nil, 0) end)
+      :timer.tc(fn -> FilesystemObjectStore.put("/fast", "", "body", nil, 0) end)
 
     assert microseconds < 100_000
   end

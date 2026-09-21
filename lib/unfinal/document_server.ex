@@ -23,10 +23,12 @@ defmodule Unfinal.DocumentServer do
           document: Document.t(),
           version: non_neg_integer(),
           dirty_version: non_neg_integer() | nil,
+          dirty_title: ContentStore.title() | nil,
           dirty_content: ContentStore.content() | nil,
           flush_timer: reference() | nil,
           flush_ref: reference() | nil,
           flushing_version: non_neg_integer() | nil,
+          flushing_title: ContentStore.title() | nil,
           flushing_content: ContentStore.content() | nil,
           retry_ms: pos_integer()
         }
@@ -52,10 +54,12 @@ defmodule Unfinal.DocumentServer do
        document: document,
        version: 0,
        dirty_version: nil,
+       dirty_title: nil,
        dirty_content: nil,
        flush_timer: nil,
        flush_ref: nil,
        flushing_version: nil,
+       flushing_title: nil,
        flushing_content: nil,
        retry_ms: @initial_retry_ms
      }}
@@ -64,11 +68,11 @@ defmodule Unfinal.DocumentServer do
   @impl true
   def handle_call(:get, _from, state), do: {:reply, state.document, state}
 
-  def handle_call({:queue_put, content}, _from, state) do
+  def handle_call({:queue_put, title, content}, _from, state) do
     version = state.version + 1
 
     %Document{} = current_document = state.document
-    document = %Document{current_document | content: content}
+    document = %Document{current_document | title: title, content: content}
 
     state =
       %{
@@ -76,11 +80,12 @@ defmodule Unfinal.DocumentServer do
         | document: document,
           version: version,
           dirty_version: version,
+          dirty_title: title,
           dirty_content: content
       }
       |> schedule_flush(ContentStore.flush_interval_ms())
 
-    upsert_page_index(state.path)
+    upsert_page_index(state.path, title)
 
     {:reply, :ok, state}
   end
@@ -97,6 +102,7 @@ defmodule Unfinal.DocumentServer do
         {:noreply, schedule_flush(state, ContentStore.flush_interval_ms())}
 
       true ->
+        title = state.dirty_title
         content = state.dirty_content
         version = state.dirty_version
         base_etag = state.document.etag
@@ -105,7 +111,7 @@ defmodule Unfinal.DocumentServer do
 
         task =
           Task.Supervisor.async_nolink(Unfinal.DocumentTaskSupervisor, fn ->
-            write_content(path, content, base_etag, base_revision)
+            write_document(path, title, content, base_etag, base_revision)
           end)
 
         {:noreply,
@@ -113,6 +119,7 @@ defmodule Unfinal.DocumentServer do
            state
            | flush_ref: task.ref,
              flushing_version: version,
+             flushing_title: title,
              flushing_content: content
          }}
     end
@@ -141,8 +148,9 @@ defmodule Unfinal.DocumentServer do
 
     state =
       if state.dirty_version == state.flushing_version and
+           state.dirty_title == state.flushing_title and
            state.dirty_content == state.flushing_content do
-        %{state | dirty_version: nil, dirty_content: nil}
+        %{state | dirty_version: nil, dirty_title: nil, dirty_content: nil}
       else
         state
       end
@@ -179,7 +187,13 @@ defmodule Unfinal.DocumentServer do
   end
 
   defp clear_flushing(state) do
-    %{state | flush_ref: nil, flushing_version: nil, flushing_content: nil}
+    %{
+      state
+      | flush_ref: nil,
+        flushing_version: nil,
+        flushing_title: nil,
+        flushing_content: nil
+    }
   end
 
   defp retry_later(state) do
@@ -187,8 +201,8 @@ defmodule Unfinal.DocumentServer do
     %{state | retry_ms: retry_ms} |> schedule_flush(state.retry_ms)
   end
 
-  defp write_content(path, content, base_etag, base_revision) do
-    ContentStore.adapter().put(path, content, base_etag, base_revision)
+  defp write_document(path, title, content, base_etag, base_revision) do
+    ContentStore.adapter().put(path, title, content, base_etag, base_revision)
   end
 
   defp merge_durable_metadata(%Document{} = visible_doc, %Document{} = durable_doc) do
@@ -220,26 +234,26 @@ defmodule Unfinal.DocumentServer do
 
   defp schedule_flush(state, _delay_ms), do: state
 
-  defp upsert_page_index("/" <> path) do
+  defp upsert_page_index("/" <> path, title) do
     case String.split(path, "/", parts: 2) do
       [namespace] ->
-        PageIndex.upsert(namespace, "/", DateTime.utc_now())
+        PageIndex.upsert(namespace, "/", DateTime.utc_now(), title)
 
       [namespace, relative] when relative != "" ->
-        PageIndex.upsert(namespace, "/" <> relative, DateTime.utc_now())
+        PageIndex.upsert(namespace, "/" <> relative, DateTime.utc_now(), title)
 
       _other ->
         :ok
     end
   end
 
-  defp upsert_page_index(_path), do: :ok
+  defp upsert_page_index(_path, _title), do: :ok
 
   defp broadcast(path, doc) do
     Phoenix.PubSub.broadcast(Unfinal.PubSub, Documents.topic(path), {
       :content_updated,
       path,
-      %{content: doc.content, etag: doc.etag, revision: doc.revision}
+      %{title: doc.title, content: doc.content, etag: doc.etag, revision: doc.revision}
     })
 
     Phoenix.PubSub.broadcast(Unfinal.PubSub, Documents.edit_topic(), {

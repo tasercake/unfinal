@@ -16,6 +16,7 @@ defmodule Unfinal.Documents do
   @move_topic_prefix "document-move:"
 
   @type path :: ContentStore.path()
+  @type title :: ContentStore.title()
   @type content :: ContentStore.content()
 
   @spec topic(path()) :: String.t()
@@ -32,9 +33,9 @@ defmodule Unfinal.Documents do
   @spec get(path()) :: Document.t()
   def get(path), do: path |> ContentStore.normalize_path() |> server_call(:get)
 
-  @spec queue_put(path(), content()) :: :ok
-  def queue_put(path, content) when is_binary(content) do
-    path |> ContentStore.normalize_path() |> server_call({:queue_put, content})
+  @spec queue_put(path(), title(), content()) :: :ok
+  def queue_put(path, title, content) when is_binary(title) and is_binary(content) do
+    path |> ContentStore.normalize_path() |> server_call({:queue_put, title, content})
   end
 
   @doc "Move one non-root document within its owner's namespace."
@@ -225,7 +226,7 @@ defmodule Unfinal.Documents do
     Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(storage_path), {
       :content_updated,
       storage_path,
-      %{content: "", etag: nil, revision: 0}
+      %{title: "", content: "", etag: nil, revision: 0}
     })
 
     entries = Unfinal.SqliteDocuments.list_namespace(namespace)

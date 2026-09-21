@@ -11,10 +11,10 @@ defmodule Unfinal.SqliteDocumentsTest do
   end
 
   test "put persists the global root document" do
-    assert {:ok, %Document{path: "/", content: "root body", revision: 1}} =
-             SqliteDocuments.put("/", "root body", nil, 0)
+    assert {:ok, %Document{path: "/", title: "Home", content: "root body", revision: 1}} =
+             SqliteDocuments.put("/", "Home", "root body", nil, 0)
 
-    assert {:ok, %Document{path: "/", content: "root body", revision: 1}} =
+    assert {:ok, %Document{path: "/", title: "Home", content: "root body", revision: 1}} =
              SqliteDocuments.fetch("/")
 
     assert {:ok, %{rows: [["__root__", "/"]]}} =
@@ -26,11 +26,11 @@ defmodule Unfinal.SqliteDocumentsTest do
   end
 
   test "put cannot recreate a path reserved by a move redirect" do
-    assert {:ok, _document} = SqliteDocuments.put("/alpha/notes", "notes", nil, 0)
+    assert {:ok, _document} = SqliteDocuments.put("/alpha/notes", "", "notes", nil, 0)
     assert :ok = SqliteDocuments.move("/alpha/notes", "/alpha/moved")
 
     assert {:error, :path_redirected} =
-             SqliteDocuments.put("/alpha/notes", "stale edit", nil, 0)
+             SqliteDocuments.put("/alpha/notes", "", "stale edit", nil, 0)
 
     assert SqliteDocuments.resolve_path("/alpha/notes") == {:redirect, "/alpha/moved"}
   end

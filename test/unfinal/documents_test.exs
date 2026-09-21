@@ -19,9 +19,12 @@ defmodule Unfinal.DocumentsTest do
   test "flush success persists and broadcasts latest content with metadata" do
     Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/queued"))
 
-    assert :ok = Documents.queue_put("/queued", "two")
+    assert :ok = Documents.queue_put("/queued", "Queued title", "two")
 
-    assert_receive {:content_updated, "/queued", %{content: "two", revision: 1, etag: etag}}, 300
+    assert_receive {:content_updated, "/queued",
+                    %{title: "Queued title", content: "two", revision: 1, etag: etag}},
+                   300
+
     assert is_binary(etag)
     assert Documents.get("/queued").content == "two"
   end
@@ -29,20 +32,20 @@ defmodule Unfinal.DocumentsTest do
   test "queue_put persists empty and whitespace content instead of deleting" do
     Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/blank"))
 
-    assert :ok = Documents.queue_put("/blank", "existing")
+    assert :ok = Documents.queue_put("/blank", "Blank", "existing")
     assert_receive {:content_updated, "/blank", %{content: "existing", revision: 1}}, 300
 
-    assert :ok = Documents.queue_put("/blank", "   \n\t")
+    assert :ok = Documents.queue_put("/blank", "Blank", "   \n\t")
     assert_receive {:content_updated, "/blank", %{content: "   \n\t", revision: 2}}, 300
 
-    assert :ok = Documents.queue_put("/blank", "")
+    assert :ok = Documents.queue_put("/blank", "Blank", "")
     assert_receive {:content_updated, "/blank", %{content: "", revision: 3}}, 300
   end
 
   test "root content survives DocumentServer restart without clearing SQLite" do
     Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/"))
 
-    assert :ok = Documents.queue_put("/", "root persists")
+    assert :ok = Documents.queue_put("/", "Root", "root persists")
     assert_receive {:content_updated, "/", %{content: "root persists", revision: 1}}, 300
 
     assert_eventually(fn ->
@@ -63,7 +66,7 @@ defmodule Unfinal.DocumentsTest do
       })
 
     Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic("/alpha/notes"))
-    assert :ok = Documents.queue_put("/alpha/notes", "rough notes")
+    assert :ok = Documents.queue_put("/alpha/notes", "", "rough notes")
     assert_receive {:content_updated, "/alpha/notes", %{content: "rough notes"}}, 300
 
     assert :ok = Documents.move("/alpha/notes", "/alpha/ideas/notes", "owner")
@@ -81,7 +84,7 @@ defmodule Unfinal.DocumentsTest do
         "email" => "owner@example.com"
       })
 
-    assert :ok = Documents.queue_put("/alpha/notes", "typed just before move")
+    assert :ok = Documents.queue_put("/alpha/notes", "", "typed just before move")
     assert :ok = Documents.move("/alpha/notes", "/alpha/moved", "owner")
 
     assert Documents.get("/alpha/moved").content == "typed just before move"
@@ -157,7 +160,7 @@ defmodule Unfinal.DocumentsTest do
     assert :ok = Documents.move("/alpha/notes", "/alpha/moved", "owner")
     assert_receive {:document_moved, "/alpha/notes", "/alpha/moved"}, 300
 
-    assert :ok = Documents.queue_put("/alpha/notes", "late stale edit")
+    assert :ok = Documents.queue_put("/alpha/notes", "", "late stale edit")
     assert_receive {:document_moved, "/alpha/notes", "/alpha/moved"}, 300
 
     assert Documents.resolve_path("/alpha/notes") == {:redirect, "/alpha/moved"}
@@ -178,7 +181,7 @@ defmodule Unfinal.DocumentsTest do
   defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 
   defp persist_document(path, content) do
-    assert {:ok, _document} = Unfinal.SqliteDocuments.put(path, content, nil, 0)
+    assert {:ok, _document} = Unfinal.SqliteDocuments.put(path, "", content, nil, 0)
   end
 
   defp stop_document_server(path) do

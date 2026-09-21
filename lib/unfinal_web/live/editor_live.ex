@@ -49,13 +49,16 @@ defmodule UnfinalWeb.EditorLive do
       do: Phoenix.PubSub.subscribe(Unfinal.PubSub, PageIndex.topic(viewed_namespace))
 
     document = Documents.get(storage_path)
+    entries = page_entries(viewed_namespace)
 
     socket =
       assign(socket,
         path: path,
         storage_path: storage_path,
+        title: document.title,
         content: document.content,
         saved_content: document.content,
+        page_title: browser_title(document.title),
         etag: document.etag,
         revision: document.revision,
         authenticated: Map.get(session, "authenticated", false),
@@ -67,8 +70,9 @@ defmodule UnfinalWeb.EditorLive do
         reader_count: if(connected?(socket), do: reader_count(reader_topic), else: 0),
         show_claim_link?: show_claim_link?(session, claimed_namespace),
         show_pages_nav?: show_pages_nav?(segments),
-        root_page_path: root_page_path(segments, path, true),
-        page_paths: page_paths(segments, path),
+        root_page_path: root_page_path(segments, path, entries),
+        page_paths: page_paths(segments, path, entries),
+        page_titles: entries |> page_titles(viewed_namespace) |> Map.put(path, document.title),
         pending_move_path: nil,
         move_error: nil,
         pending_delete_path: nil,
@@ -82,7 +86,7 @@ defmodule UnfinalWeb.EditorLive do
   @impl true
   def handle_event(
         "save",
-        %{"content" => content},
+        params,
         %{
           assigns: %{
             writer?: true,
@@ -90,8 +94,28 @@ defmodule UnfinalWeb.EditorLive do
           }
         } = socket
       ) do
-    :ok = Documents.queue_put(storage_path, content)
-    {:noreply, socket}
+    title = Map.get(params, "title", Map.get(socket.assigns, :title, ""))
+    content = Map.get(params, "content", socket.assigns.content)
+
+    :ok = Documents.queue_put(storage_path, title, content)
+
+    updated_socket =
+      if Map.has_key?(socket.assigns, :title) do
+        assign(socket,
+          title: title,
+          page_title: browser_title(title),
+          page_titles:
+            Map.put(
+              Map.get(socket.assigns, :page_titles, %{}),
+              Map.get(socket.assigns, :path, storage_path),
+              title
+            )
+        )
+      else
+        socket
+      end
+
+    {:noreply, updated_socket}
   end
 
   def handle_event("save", _params, socket), do: {:noreply, socket}
@@ -195,7 +219,8 @@ defmodule UnfinalWeb.EditorLive do
          |> assign(
            pending_delete_path: nil,
            root_page_path: root_page_path_from_entries(namespace, entries),
-           page_paths: page_paths_from_entries(namespace, entries, socket.assigns.path)
+           page_paths: page_paths_from_entries(namespace, entries, socket.assigns.path),
+           page_titles: page_titles(entries, namespace)
          )
          |> push_navigate(to: namespace_path(namespace, "/"))}
 
@@ -235,7 +260,16 @@ defmodule UnfinalWeb.EditorLive do
         {:content_updated, storage_path, %{content: "", etag: nil, revision: 0}},
         %{assigns: %{storage_path: storage_path}} = socket
       ) do
-    {:noreply, assign(socket, content: "", etag: nil, revision: 0)}
+    {:noreply,
+     assign(socket,
+       title: "",
+       content: "",
+       page_title: browser_title(""),
+       page_titles:
+         Map.put(Map.get(socket.assigns, :page_titles, %{}), Map.get(socket.assigns, :path), ""),
+       etag: nil,
+       revision: 0
+     )}
   end
 
   def handle_info(
@@ -259,12 +293,23 @@ defmodule UnfinalWeb.EditorLive do
   end
 
   def handle_info(
-        {:content_updated, storage_path, %{content: content, etag: etag, revision: revision}},
+        {:content_updated, storage_path,
+         %{content: content, etag: etag, revision: revision} = document},
         %{assigns: %{storage_path: storage_path}} = socket
       ) do
+    title = Map.get(document, :title, Map.get(socket.assigns, :title, ""))
+
     {:noreply,
      assign(socket,
+       title: title,
        content: content,
+       page_title: browser_title(title),
+       page_titles:
+         Map.put(
+           Map.get(socket.assigns, :page_titles, %{}),
+           Map.get(socket.assigns, :path),
+           title
+         ),
        etag: etag,
        revision: revision
      )}
@@ -277,7 +322,8 @@ defmodule UnfinalWeb.EditorLive do
     {:noreply,
      assign(socket,
        root_page_path: root_page_path_from_entries(namespace, entries),
-       page_paths: page_paths_from_entries(namespace, entries, path)
+       page_paths: page_paths_from_entries(namespace, entries, path),
+       page_titles: page_titles(entries, namespace)
      )}
   end
 
@@ -319,19 +365,22 @@ defmodule UnfinalWeb.EditorLive do
   defp viewed_namespace([namespace | _rest]), do: namespace
   defp viewed_namespace([]), do: nil
 
-  defp root_page_path([namespace], _current_path, _connected?), do: namespace_path(namespace, "/")
+  defp page_entries(namespace) when is_binary(namespace), do: PageIndex.list(namespace)
+  defp page_entries(_namespace), do: []
 
-  defp root_page_path([namespace | _rest], _current_path, true) do
-    root_page_path_from_entries(namespace, PageIndex.list(namespace))
+  defp root_page_path([namespace], _current_path, _entries), do: namespace_path(namespace, "/")
+
+  defp root_page_path([namespace | _rest], _current_path, entries) do
+    root_page_path_from_entries(namespace, entries)
   end
 
-  defp root_page_path(_segments, _current_path, _connected?), do: nil
+  defp root_page_path(_segments, _current_path, _entries), do: nil
 
-  defp page_paths([namespace | _rest], current_path) do
-    page_paths_from_entries(namespace, PageIndex.list(namespace), current_path)
+  defp page_paths([namespace | _rest], current_path, entries) do
+    page_paths_from_entries(namespace, entries, current_path)
   end
 
-  defp page_paths(_segments, _current_path), do: []
+  defp page_paths(_segments, _current_path, _entries), do: []
 
   defp root_page_path_from_entries(namespace, entries) do
     if Enum.any?(entries, &(&1.path == "/")), do: namespace_path(namespace, "/")
@@ -345,6 +394,12 @@ defmodule UnfinalWeb.EditorLive do
     |> Enum.reject(&(&1 == root_path))
   end
 
+  defp page_titles(entries, namespace) when is_binary(namespace) do
+    Map.new(entries, fn entry -> {namespace_path(namespace, entry.path), entry.title} end)
+  end
+
+  defp page_titles(_entries, _namespace), do: %{}
+
   defp namespace_path(namespace, "/"), do: "/n/#{namespace}"
 
   defp namespace_path(namespace, path) do
@@ -354,6 +409,20 @@ defmodule UnfinalWeb.EditorLive do
 
   defp display_page_path("/n" <> path), do: path
   defp display_page_path(path), do: path
+
+  defp display_page_title(path, titles) do
+    case titles |> Map.get(path, "") |> String.trim() do
+      "" -> display_page_path(path)
+      title -> title
+    end
+  end
+
+  defp browser_title(title) do
+    case String.trim(title) do
+      "" -> "Unfinal"
+      trimmed -> trimmed
+    end
+  end
 
   @spec reader_topic(String.t()) :: String.t()
   defp reader_topic(storage_path), do: "readers:" <> storage_path
@@ -441,7 +510,7 @@ defmodule UnfinalWeb.EditorLive do
                   ]}
                   href={@root_page_path}
                 >
-                  {display_page_path(@root_page_path)}
+                  {display_page_title(@root_page_path, @page_titles)}
                 </a>
                 <div
                   :if={
@@ -477,7 +546,7 @@ defmodule UnfinalWeb.EditorLive do
                   class="group relative rounded-lg bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                 >
                   <a href={@path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
-                    {display_page_path(@path)}
+                    {display_page_title(@path, @page_titles)}
                   </a>
                   <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
                     <button
@@ -520,7 +589,7 @@ defmodule UnfinalWeb.EditorLive do
                   ]}
                 >
                   <a href={path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
-                    {display_page_path(path)}
+                    {display_page_title(path, @page_titles)}
                   </a>
                   <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
                     <button
@@ -605,20 +674,44 @@ defmodule UnfinalWeb.EditorLive do
             as={:editor}
             id="editor-form"
             phx-change="save"
-            class="flex min-h-0 flex-1 overflow-hidden"
+            class="flex min-h-0 flex-1 flex-col overflow-y-auto px-[clamp(2rem,7vw,7rem)] py-10"
           >
+            <input
+              id="document-title-input"
+              name="title"
+              value={@title}
+              maxlength="200"
+              class="w-full shrink-0 border-0 bg-transparent text-left text-4xl font-semibold tracking-tight outline-none placeholder:text-stone-300"
+              placeholder="Untitled"
+              aria-label="Document title"
+            />
             <textarea
               name="content"
-              class="h-full min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-[clamp(2rem,7vw,7rem)] py-10 text-left text-[22px] leading-10 outline-none placeholder:text-stone-300"
+              class="mt-8 min-h-[20rem] w-full flex-1 resize-none border-0 bg-transparent text-left text-[22px] leading-10 outline-none placeholder:text-stone-300"
+              placeholder="Start writing..."
             ><%= @content %></textarea>
           </.form>
 
-          <article
+          <div
             :if={!@writer?}
-            id="readonly-document"
-            class="h-full min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap bg-transparent px-[clamp(2rem,7vw,7rem)] py-10 text-left text-[22px] leading-10"
-            phx-no-format
-          ><%= @content %></article>
+            class="h-full min-h-0 flex-1 overflow-y-auto bg-transparent px-[clamp(2rem,7vw,7rem)] py-10 text-left"
+          >
+            <h1
+              :if={String.trim(@title) != ""}
+              id="document-title"
+              class="text-4xl font-semibold tracking-tight"
+            >
+              {@title}
+            </h1>
+            <article
+              id="readonly-document"
+              class={[
+                "whitespace-pre-wrap text-[22px] leading-10",
+                String.trim(@title) != "" && "mt-8"
+              ]}
+              phx-no-format
+            ><%= @content %></article>
+          </div>
         </main>
       </div>
 

@@ -5,11 +5,11 @@ defmodule Unfinal.CrashingOnceObjectStore do
   def get(path), do: Unfinal.FakeObjectStore.get(path)
 
   @impl true
-  def put(path, content, base_etag, base_revision) do
+  def put(path, title, content, base_etag, base_revision) do
     if crash_next?() do
       raise "crashing once during put"
     else
-      Unfinal.FakeObjectStore.put(path, content, base_etag, base_revision)
+      Unfinal.FakeObjectStore.put(path, title, content, base_etag, base_revision)
     end
   end
 

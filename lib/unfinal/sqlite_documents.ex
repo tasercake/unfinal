@@ -24,11 +24,12 @@ defmodule Unfinal.SqliteDocuments do
   """
   @spec fetch(String.t()) :: {:ok, Document.t()} | {:error, :not_found | term()}
   def fetch(path) when is_binary(path) do
-    sql = "SELECT path, content, revision, updated_at FROM documents WHERE path = ?1 LIMIT 1"
+    sql =
+      "SELECT path, title, content, revision, updated_at FROM documents WHERE path = ?1 LIMIT 1"
 
     case query(sql, [path]) do
-      {:ok, %{rows: [[^path, content, revision, updated_at]]}} ->
-        {:ok, build_doc(path, content, revision, updated_at)}
+      {:ok, %{rows: [[^path, title, content, revision, updated_at]]}} ->
+        {:ok, build_doc(path, title, content, revision, updated_at)}
 
       {:ok, %{rows: []}} ->
         {:error, :not_found}
@@ -45,41 +46,42 @@ defmodule Unfinal.SqliteDocuments do
   - Existing rows: UPDATE only when base_revision matches.
   Returns `{:ok, doc}` | `{:stale, doc}` | `{:error, reason}`.
   """
-  @spec put(String.t(), String.t(), String.t() | nil, non_neg_integer()) ::
+  @spec put(String.t(), String.t(), String.t(), String.t() | nil, non_neg_integer()) ::
           {:ok, Document.t()} | {:stale, Document.t()} | {:error, term()}
-  def put(path, content, nil, 0) do
+  def put(path, title, content, nil, 0) do
     with :ok <- ensure_writable_path(path),
          {:ok, {namespace, relative_path}} <- parts(path) do
       now_iso = DateTime.to_iso8601(DateTime.utc_now())
 
       # INSERT or upgrade a placeholder row (revision 0 from touch_page) to revision 1
       sql =
-        "INSERT INTO documents(path, namespace, relative_path, content, revision, updated_at) " <>
-          "VALUES (?1, ?2, ?3, ?4, 1, ?5) " <>
-          "ON CONFLICT(path) DO UPDATE SET content = excluded.content, revision = 1, updated_at = excluded.updated_at WHERE documents.revision = 0"
+        "INSERT INTO documents(path, namespace, relative_path, title, content, revision, updated_at) " <>
+          "VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6) " <>
+          "ON CONFLICT(path) DO UPDATE SET title = excluded.title, content = excluded.content, revision = 1, updated_at = excluded.updated_at WHERE documents.revision = 0"
 
-      case query(sql, [path, namespace, relative_path, content, now_iso]) do
-        {:ok, %{num_rows: 1}} -> {:ok, build_doc(path, content, 1, now_iso)}
+      case query(sql, [path, namespace, relative_path, title, content, now_iso]) do
+        {:ok, %{num_rows: 1}} -> {:ok, build_doc(path, title, content, 1, now_iso)}
         {:ok, %{num_rows: 0}} -> {:stale, fetch_latest!(path)}
         {:error, reason} -> {:error, reason}
       end
     end
   end
 
-  def put(path, content, _base_etag, base_revision)
-      when is_binary(path) and is_integer(base_revision) and base_revision > 0 do
+  def put(path, title, content, _base_etag, base_revision)
+      when is_binary(path) and is_binary(title) and is_binary(content) and
+             is_integer(base_revision) and base_revision > 0 do
     with :ok <- ensure_writable_path(path),
          {:ok, {_ns, _rel}} <- parts(path) do
       now_iso = DateTime.to_iso8601(DateTime.utc_now())
       new_rev = base_revision + 1
 
       sql =
-        "UPDATE documents SET content = ?1, revision = ?2, updated_at = ?3 " <>
-          "WHERE path = ?4 AND revision = ?5"
+        "UPDATE documents SET title = ?1, content = ?2, revision = ?3, updated_at = ?4 " <>
+          "WHERE path = ?5 AND revision = ?6"
 
-      case query(sql, [content, new_rev, now_iso, path, base_revision]) do
+      case query(sql, [title, content, new_rev, now_iso, path, base_revision]) do
         {:ok, %{num_rows: 1}} ->
-          {:ok, build_doc(path, content, new_rev, now_iso)}
+          {:ok, build_doc(path, title, content, new_rev, now_iso)}
 
         {:ok, %{num_rows: 0}} ->
           {:stale, fetch_latest!(path)}
@@ -90,35 +92,38 @@ defmodule Unfinal.SqliteDocuments do
     end
   end
 
-  def put(_path, _content, _base_etag, _base_revision), do: {:error, :invalid_base}
+  def put(_path, _title, _content, _base_etag, _base_revision), do: {:error, :invalid_base}
 
   @doc """
   Touch a page: insert placeholder with empty content if absent; update
   `updated_at` only when the target row is not already newer.
   """
-  @spec touch_page(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
-  def touch_page(namespace, relative_path, updated_at)
-      when is_binary(namespace) and is_binary(relative_path) and is_binary(updated_at) do
+  @spec touch_page(String.t(), String.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  def touch_page(namespace, relative_path, updated_at, title)
+      when is_binary(namespace) and is_binary(relative_path) and is_binary(updated_at) and
+             is_binary(title) do
     path = full_path(namespace, relative_path)
 
     with :ok <- ensure_writable_path(path) do
-      do_touch_page(path, namespace, relative_path, updated_at)
+      do_touch_page(path, namespace, relative_path, updated_at, title)
     end
   end
 
-  defp do_touch_page(path, namespace, relative_path, updated_at) do
+  defp do_touch_page(path, namespace, relative_path, updated_at, title) do
     insert_sql =
-      "INSERT INTO documents(path, namespace, relative_path, content, revision, updated_at) " <>
-        "VALUES (?1, ?2, ?3, '', 0, ?4) ON CONFLICT(path) DO NOTHING"
+      "INSERT INTO documents(path, namespace, relative_path, title, content, revision, updated_at) " <>
+        "VALUES (?1, ?2, ?3, ?4, '', 0, ?5) ON CONFLICT(path) DO NOTHING"
 
-    case query(insert_sql, [path, namespace, relative_path, updated_at]) do
+    case query(insert_sql, [path, namespace, relative_path, title, updated_at]) do
       {:ok, %{num_rows: 1}} ->
         :ok
 
       {:ok, %{num_rows: 0}} ->
-        update_sql = "UPDATE documents SET updated_at = ?1 WHERE path = ?2 AND updated_at < ?1"
+        update_sql =
+          "UPDATE documents SET title = ?1, " <>
+            "updated_at = CASE WHEN updated_at < ?2 THEN ?2 ELSE updated_at END WHERE path = ?3"
 
-        case query(update_sql, [updated_at, path]) do
+        case query(update_sql, [title, updated_at, path]) do
           {:ok, _} -> :ok
           {:error, reason} -> {:error, reason}
         end
@@ -130,16 +135,18 @@ defmodule Unfinal.SqliteDocuments do
 
   @doc """
   List namespace documents ordered by `updated_at` DESC.
-  Returns `[%{path: String.t(), updated_at: String.t()}]` with namespace-relative paths.
+  Returns title metadata with namespace-relative paths.
   """
-  @spec list_namespace(String.t()) :: [%{path: String.t(), updated_at: String.t()}]
+  @spec list_namespace(String.t()) :: [
+          %{path: String.t(), title: String.t(), updated_at: String.t()}
+        ]
   def list_namespace(namespace) when is_binary(namespace) do
     sql =
-      "SELECT relative_path, updated_at FROM documents WHERE namespace = ?1 ORDER BY updated_at DESC"
+      "SELECT relative_path, title, updated_at FROM documents WHERE namespace = ?1 ORDER BY updated_at DESC"
 
     case query(sql, [namespace]) do
       {:ok, %{rows: rows}} ->
-        Enum.map(rows, fn [rel, upd] -> %{path: rel, updated_at: upd} end)
+        Enum.map(rows, fn [rel, title, upd] -> %{path: rel, title: title, updated_at: upd} end)
 
       {:error, _} ->
         []
@@ -147,14 +154,16 @@ defmodule Unfinal.SqliteDocuments do
   end
 
   @doc "List most recently edited documents across all namespaces."
-  @spec recent_edits(non_neg_integer()) :: [%{path: String.t(), updated_at: String.t()}]
+  @spec recent_edits(non_neg_integer()) :: [
+          %{path: String.t(), title: String.t(), updated_at: String.t()}
+        ]
   def recent_edits(limit \\ 20) when is_integer(limit) and limit > 0 do
     sql =
-      "SELECT path, updated_at FROM documents WHERE updated_at IS NOT NULL ORDER BY updated_at DESC LIMIT ?1"
+      "SELECT path, title, updated_at FROM documents WHERE updated_at IS NOT NULL ORDER BY updated_at DESC LIMIT ?1"
 
     case query(sql, [limit]) do
       {:ok, %{rows: rows}} ->
-        Enum.map(rows, fn [path, upd] -> %{path: path, updated_at: upd} end)
+        Enum.map(rows, fn [path, title, upd] -> %{path: path, title: title, updated_at: upd} end)
 
       {:error, _} ->
         []
@@ -232,13 +241,20 @@ defmodule Unfinal.SqliteDocuments do
 
   # ── Private ──────────────────────────────────────────────────────────────────
 
-  defp build_doc(path, content, revision, updated_at) do
+  defp build_doc(path, title, content, revision, updated_at) do
     etag =
       :crypto.hash(:sha256, "#{revision}:#{updated_at}")
       |> Base.encode16(case: :lower)
       |> binary_part(0, 16)
 
-    %Document{path: path, content: content, etag: etag, revision: revision, write_id: nil}
+    %Document{
+      path: path,
+      title: title,
+      content: content,
+      etag: etag,
+      revision: revision,
+      write_id: nil
+    }
   end
 
   defp move_in_transaction(source_path, target_path, namespace, target_relative_path) do
@@ -318,7 +334,7 @@ defmodule Unfinal.SqliteDocuments do
         doc
 
       {:error, :not_found} ->
-        %Document{path: path, content: "", etag: nil, revision: 0, write_id: nil}
+        %Document{path: path, title: "", content: "", etag: nil, revision: 0, write_id: nil}
 
       {:error, reason} ->
         raise "failed to read latest SQLite document for #{path}: #{inspect(reason)}"
