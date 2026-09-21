@@ -5,6 +5,7 @@ defmodule UnfinalWeb.EditorLiveTest do
   alias Unfinal.Documents
   alias Unfinal.NamespaceStore
   alias Unfinal.SQLiteCleanup
+  alias Unfinal.SQLiteFixtures
   alias Unfinal.SqliteDocuments
 
   setup do
@@ -24,6 +25,7 @@ defmodule UnfinalWeb.EditorLiveTest do
   end
 
   test "redirects slash to /n and renders storage paths without /n prefix", %{conn: conn} do
+    SQLiteFixtures.claim_namespace("existing")
     save_document("/", "root text")
     save_document("/existing", "saved text")
 
@@ -128,6 +130,7 @@ defmodule UnfinalWeb.EditorLiveTest do
   end
 
   test "readonly document does not add template whitespace to content", %{conn: conn} do
+    SQLiteFixtures.claim_namespace("plain")
     save_document("/plain", "hello")
 
     {:ok, _view, html} = live(conn, "/n/plain")
@@ -242,6 +245,7 @@ defmodule UnfinalWeb.EditorLiveTest do
 
   test "claimed user viewing another namespace sees its pages but no new page form", %{conn: conn} do
     :ok = NamespaceStore.claim("kp", %{"id" => "owner", "email" => "owner@example.com"})
+    SQLiteFixtures.claim_namespace("tanay")
     :ok = Unfinal.PageIndex.upsert("kp", "/private", ~U[2026-06-24 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("tanay", "/", ~U[2026-06-23 00:00:00Z])
     :ok = Unfinal.PageIndex.upsert("tanay", "/edtech", ~U[2026-06-24 00:00:00Z])

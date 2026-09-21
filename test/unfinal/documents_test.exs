@@ -2,6 +2,7 @@ defmodule Unfinal.DocumentsTest do
   use ExUnit.Case, async: false
 
   alias Unfinal.Documents
+  alias Unfinal.SQLiteFixtures
 
   setup do
     Application.put_env(:unfinal, :content_store_flush_interval_ms, 10)
@@ -10,6 +11,8 @@ defmodule Unfinal.DocumentsTest do
     # Clean SQLite tables before each test
     Unfinal.Repo.query("DELETE FROM documents", [])
     Unfinal.Repo.query("DELETE FROM namespace_claims", [])
+    SQLiteFixtures.claim_namespace("queued")
+    SQLiteFixtures.claim_namespace("blank")
 
     on_exit(fn ->
       Documents.clear()

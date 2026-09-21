@@ -2,11 +2,17 @@ defmodule Unfinal.SqliteContentStoreTest do
   use ExUnit.Case, async: false
 
   alias Unfinal.ContentStore.Document
-  alias Unfinal.SqliteContentStore
   alias Unfinal.SQLiteCleanup
+  alias Unfinal.SQLiteFixtures
+  alias Unfinal.SqliteContentStore
 
   setup do
     SQLiteCleanup.clear_all()
+
+    for namespace <- ["test-doc", "versioned", "deleteme"] do
+      SQLiteFixtures.claim_namespace(namespace)
+    end
+
     on_exit(fn -> SQLiteCleanup.clear_all() end)
   end
 

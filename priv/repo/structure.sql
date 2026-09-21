@@ -1,22 +1,40 @@
 CREATE TABLE IF NOT EXISTS "schema_migrations" ("version" INTEGER PRIMARY KEY, "inserted_at" TEXT);
-CREATE TABLE documents (
-  path TEXT PRIMARY KEY,
-  namespace TEXT NOT NULL,
-  relative_path TEXT NOT NULL,
-  content TEXT NOT NULL DEFAULT '',
-  revision INTEGER NOT NULL DEFAULT 0,
-  updated_at TEXT NOT NULL
-, "title" TEXT DEFAULT '' NOT NULL);
-CREATE INDEX documents_namespace_updated_idx
-ON documents(namespace, updated_at DESC)
-;
 CREATE TABLE namespace_claims (
   namespace TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   claimed_at TEXT NOT NULL
 , "user_id" TEXT);
 CREATE UNIQUE INDEX "namespace_claims_user_id_index" ON "namespace_claims" ("user_id");
-INSERT INTO schema_migrations VALUES(20260630000000,'2026-07-02T01:21:19');
-INSERT INTO schema_migrations VALUES(20260701000000,'2026-07-02T01:21:19');
-INSERT INTO schema_migrations VALUES(20260921000000,'2026-09-21T08:59:01');
-INSERT INTO schema_migrations VALUES(20260921000001,'2026-09-21T08:59:01');
+CREATE TABLE document_redirects (
+  source_path TEXT PRIMARY KEY,
+  target_path TEXT NOT NULL,
+  namespace TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX document_redirects_target_idx
+ON document_redirects(target_path)
+;
+CREATE TABLE IF NOT EXISTS "documents" (
+  path TEXT PRIMARY KEY,
+  namespace TEXT,
+  relative_path TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  revision INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  CONSTRAINT documents_root_namespace_check CHECK (
+    (path = '/' AND namespace IS NULL AND relative_path = '/')
+    OR
+    (path <> '/' AND namespace IS NOT NULL)
+  ),
+  CONSTRAINT documents_namespace_fk
+    FOREIGN KEY(namespace) REFERENCES namespace_claims(namespace) ON DELETE RESTRICT
+);
+CREATE INDEX documents_namespace_updated_idx
+ON documents(namespace, updated_at DESC)
+;
+INSERT INTO schema_migrations VALUES(20260630000000,'2026-09-21T14:17:54');
+INSERT INTO schema_migrations VALUES(20260701000000,'2026-09-21T14:17:54');
+INSERT INTO schema_migrations VALUES(20260921000000,'2026-09-21T14:17:54');
+INSERT INTO schema_migrations VALUES(20260921000001,'2026-09-21T14:17:54');
+INSERT INTO schema_migrations VALUES(20260921171000,'2026-09-21T14:17:54');
