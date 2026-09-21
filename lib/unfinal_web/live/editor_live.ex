@@ -363,19 +363,19 @@ defmodule UnfinalWeb.EditorLive do
                   >
                     <span class="hero-ellipsis-vertical h-3.5 w-3.5" />
                   </button>
-                  <div
-                    :if={@menu_open_path == @path}
-                    phx-click-away="close_page_menu"
-                    class="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
+                </div>
+                <div
+                  :if={@writer? and @menu_open_path == @path}
+                  phx-click-away="close_page_menu"
+                  class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
+                >
+                  <button
+                    phx-click="confirm_delete"
+                    phx-value-path={@path}
+                    class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
                   >
-                    <button
-                      phx-click="confirm_delete"
-                      phx-value-path={@path}
-                      class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                    Delete
+                  </button>
                 </div>
               </div>
 
@@ -399,19 +399,19 @@ defmodule UnfinalWeb.EditorLive do
                   >
                     <span class="hero-ellipsis-vertical h-3.5 w-3.5" />
                   </button>
-                  <div
-                    :if={@menu_open_path == path}
-                    phx-click-away="close_page_menu"
-                    class="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
+                </div>
+                <div
+                  :if={@writer? and @menu_open_path == path}
+                  phx-click-away="close_page_menu"
+                  class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
+                >
+                  <button
+                    phx-click="confirm_delete"
+                    phx-value-path={path}
+                    class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
                   >
-                    <button
-                      phx-click="confirm_delete"
-                      phx-value-path={path}
-                      class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                    Delete
+                  </button>
                 </div>
               </div>
             </div>
