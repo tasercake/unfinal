@@ -85,6 +85,7 @@ defmodule Unfinal.SqliteContentStore do
     if Mix.env() == :test do
       try do
         Unfinal.Repo.query("DELETE FROM documents", [], timeout: 5_000)
+        Unfinal.Repo.query("DELETE FROM document_redirects", [], timeout: 5_000)
         Unfinal.Repo.query("DELETE FROM namespace_claims", [], timeout: 5_000)
       rescue
         _ -> :ok

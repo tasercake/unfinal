@@ -455,8 +455,8 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     # Open kebab menu and click Delete
     view
-      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     html =
       view
@@ -543,12 +543,12 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     # Open kebab menu, then confirm_delete and delete_page
     view
-      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     view
-      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     {:error, {:live_redirect, _}} =
       view
@@ -573,12 +573,12 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     # Open kebab menu and delete
     view
-      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     view
-      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     {:error, {:live_redirect, %{to: redirect_to}}} =
       view
@@ -598,12 +598,12 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     # Open kebab menu and delete
     view
-      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     view
-      |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='confirm_delete'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     {:error, {:live_redirect, %{to: redirect_to}}} =
       view
@@ -625,8 +625,8 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     # Open kebab menu, then click Delete to show confirmation
     view
-      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     html =
       view
@@ -641,6 +641,144 @@ defmodule UnfinalWeb.EditorLiveTest do
     # Cancel the dialog
     html = view |> element("button[phx-click='cancel_delete']") |> render_click()
     refute html =~ "Permanently delete"
+  end
+
+  # ── Change page address tests ────────────────────────────────────────────────
+
+  test "namespace owner changes a non-root page address from its menu", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "rough notes")
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha/notes")
+
+    view
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    html =
+      view
+      |> element("button[phx-click='confirm_move'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    assert html =~ "Change page address"
+    assert html =~ "/alpha/"
+    assert html =~ ~s(id="move-page-form")
+    assert html =~ ~s(value="notes")
+    assert html =~ "Old links will continue to work."
+
+    assert {:error, {:live_redirect, %{to: "/n/alpha/ideas/rough-notes"}}} =
+             view
+             |> form("#move-page-form", %{path: "ideas/rough-notes"})
+             |> render_submit()
+
+    assert Documents.get("/alpha/ideas/rough-notes").content == "rough notes"
+  end
+
+  test "old page address returns a permanent redirect and preserves query string", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "rough notes")
+    assert :ok = Documents.move("/alpha/notes", "/alpha/moved", "owner")
+
+    conn = get(conn, "/n/alpha/notes?from=bookmark")
+
+    assert redirected_to(conn, 301) == "/n/alpha/moved?from=bookmark"
+  end
+
+  test "reader on old address follows a live move", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "rough notes")
+    owner_conn = logged_in(conn, "owner", "owner@example.com")
+    reader_conn = Phoenix.ConnTest.build_conn()
+
+    {:ok, owner_view, _html} = live(owner_conn, "/n/alpha/notes")
+    {:ok, reader_view, _html} = live(reader_conn, "/n/alpha/notes")
+
+    owner_view
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    owner_view
+    |> element("button[phx-click='confirm_move'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    assert {:error, {:live_redirect, %{to: "/n/alpha/moved"}}} =
+             owner_view
+             |> form("#move-page-form", %{path: "moved"})
+             |> render_submit()
+
+    assert_redirect(reader_view, "/n/alpha/moved")
+  end
+
+  test "second writer tab on old address follows a live move", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "rough notes")
+    first_conn = logged_in(conn, "owner", "owner@example.com")
+
+    second_conn =
+      Phoenix.ConnTest.build_conn()
+      |> logged_in("owner", "owner@example.com")
+
+    {:ok, first_view, _html} = live(first_conn, "/n/alpha/notes")
+    {:ok, second_view, _html} = live(second_conn, "/n/alpha/notes")
+
+    first_view
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    first_view
+    |> element("button[phx-click='confirm_move'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    assert {:error, {:live_redirect, %{to: "/n/alpha/moved"}}} =
+             first_view
+             |> form("#move-page-form", %{path: "moved"})
+             |> render_submit()
+
+    assert_redirect(second_view, "/n/alpha/moved")
+  end
+
+  test "change address dialog rejects invalid and occupied paths", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "notes")
+    save_document("/alpha/taken", "taken")
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha/notes")
+
+    view
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    view
+    |> element("button[phx-click='confirm_move'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    html = view |> form("#move-page-form", %{path: "Bad Path"}) |> render_submit()
+    assert html =~ "Use lowercase letters, numbers, hyphens, and /."
+
+    html = view |> form("#move-page-form", %{path: "taken"}) |> render_submit()
+    assert html =~ "That address is already in use."
+    assert Documents.get("/alpha/notes").content == "notes"
+  end
+
+  test "change address dialog can be cancelled", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    save_document("/alpha/notes", "notes")
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha/notes")
+
+    view
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    view
+    |> element("button[phx-click='confirm_move'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
+
+    html = view |> element("button[phx-click='cancel_move']") |> render_click()
+    refute html =~ ~s(id="move-page-dialog")
   end
 
   # ── Kebab menu tests ──────────────────────────────────────────────────────
@@ -716,8 +854,8 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     # Open the menu
     view
-      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     assert render(view) =~ ~s(phx-click-away="close_page_menu")
 
@@ -759,8 +897,8 @@ defmodule UnfinalWeb.EditorLiveTest do
 
     # Open kebab menu
     view
-      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
-      |> render_click()
+    |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+    |> render_click()
 
     # Click Delete in dropdown
     html =

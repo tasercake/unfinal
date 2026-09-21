@@ -42,6 +42,9 @@ defmodule UnfinalWeb.EditorLive do
     if connected?(socket) and not writer?,
       do: Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic(storage_path))
 
+    if connected?(socket),
+      do: Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.move_topic(storage_path))
+
     if connected?(socket) and is_binary(viewed_namespace),
       do: Phoenix.PubSub.subscribe(Unfinal.PubSub, PageIndex.topic(viewed_namespace))
 
@@ -66,6 +69,8 @@ defmodule UnfinalWeb.EditorLive do
         show_pages_nav?: show_pages_nav?(segments),
         root_page_path: root_page_path(segments, path, true),
         page_paths: page_paths(segments, path),
+        pending_move_path: nil,
+        move_error: nil,
         pending_delete_path: nil,
         menu_open_path: nil,
         mobile_menu_open: false
@@ -107,6 +112,55 @@ defmodule UnfinalWeb.EditorLive do
   end
 
   def handle_event("open_new_page", _params, socket), do: {:noreply, socket}
+
+  def handle_event(
+        "confirm_move",
+        %{"path" => path},
+        %{assigns: %{claimed_namespace: namespace, viewed_namespace: namespace}} = socket
+      )
+      when is_binary(namespace) and is_binary(path) do
+    {:noreply,
+     assign(socket,
+       pending_move_path: path,
+       move_error: nil,
+       menu_open_path: nil
+     )}
+  end
+
+  def handle_event("confirm_move", _params, socket), do: {:noreply, socket}
+
+  def handle_event("cancel_move", _params, socket) do
+    {:noreply, assign(socket, pending_move_path: nil, move_error: nil)}
+  end
+
+  def handle_event(
+        "move_page",
+        %{"path" => relative_path},
+        %{
+          assigns: %{
+            claimed_namespace: namespace,
+            viewed_namespace: namespace,
+            pending_move_path: source_url_path,
+            user: %{"id" => user_id}
+          }
+        } = socket
+      )
+      when is_binary(namespace) and is_binary(source_url_path) and is_binary(relative_path) do
+    with {:ok, target_storage_path} <- move_target_path(namespace, relative_path),
+         source_storage_path <- String.replace_prefix(source_url_path, "/n", ""),
+         :ok <- Documents.move(source_storage_path, target_storage_path, user_id) do
+      target_url_path = "/n" <> target_storage_path
+
+      {:noreply,
+       socket
+       |> put_flash(:info, "Page moved to #{display_page_path(target_url_path)}")
+       |> push_navigate(to: target_url_path)}
+    else
+      {:error, reason} -> {:noreply, assign(socket, move_error: move_error(reason))}
+    end
+  end
+
+  def handle_event("move_page", _params, socket), do: {:noreply, socket}
 
   def handle_event(
         "confirm_delete",
@@ -182,6 +236,18 @@ defmodule UnfinalWeb.EditorLive do
         %{assigns: %{storage_path: storage_path}} = socket
       ) do
     {:noreply, assign(socket, content: "", etag: nil, revision: 0)}
+  end
+
+  def handle_info(
+        {:document_moved, storage_path, target_storage_path},
+        %{assigns: %{storage_path: storage_path}} = socket
+      ) do
+    target_url_path = "/n" <> target_storage_path
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "Page moved to #{display_page_path(target_url_path)}")
+     |> push_navigate(to: target_url_path)}
   end
 
   def handle_info(
@@ -306,6 +372,28 @@ defmodule UnfinalWeb.EditorLive do
   defp reader_count_label(1), do: "1 person reading"
   defp reader_count_label(count), do: "#{count} people reading"
 
+  defp move_target_path(namespace, path) do
+    relative_path = path |> String.trim() |> String.trim("/")
+    target_path = "/#{namespace}/#{relative_path}"
+
+    if relative_path != "" and DocumentPath.valid_relative_path?(target_path),
+      do: {:ok, target_path},
+      else: {:error, :invalid_path}
+  end
+
+  defp move_form_value("/n/" <> path, namespace) do
+    String.replace_prefix(path, namespace <> "/", "")
+  end
+
+  defp move_form_value(_path, _namespace), do: ""
+
+  defp move_error(:destination_taken), do: "That address is already in use."
+
+  defp move_error(:invalid_path),
+    do: "Use lowercase letters, numbers, hyphens, and /."
+
+  defp move_error(_reason), do: "Could not change address. Try again."
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -407,6 +495,13 @@ defmodule UnfinalWeb.EditorLive do
                     class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
                   >
                     <button
+                      phx-click="confirm_move"
+                      phx-value-path={@path}
+                      class="w-full px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50 first:rounded-t-lg"
+                    >
+                      Change address…
+                    </button>
+                    <button
                       phx-click="confirm_delete"
                       phx-value-path={@path}
                       class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 first:rounded-t-lg last:rounded-b-lg"
@@ -442,6 +537,13 @@ defmodule UnfinalWeb.EditorLive do
                     phx-click-away="close_page_menu"
                     class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
                   >
+                    <button
+                      phx-click="confirm_move"
+                      phx-value-path={path}
+                      class="w-full px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50 first:rounded-t-lg"
+                    >
+                      Change address…
+                    </button>
                     <button
                       phx-click="confirm_delete"
                       phx-value-path={path}
@@ -519,6 +621,54 @@ defmodule UnfinalWeb.EditorLive do
           ><%= @content %></article>
         </main>
       </div>
+
+      <div
+        :if={message = Phoenix.Flash.get(@flash, :info)}
+        class="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-lg bg-stone-900 px-4 py-2 text-sm text-white shadow-lg"
+        role="status"
+      >
+        {message}
+      </div>
+
+      <dialog
+        :if={@pending_move_path}
+        id="move-page-dialog"
+        open
+        class="fixed inset-0 z-50 m-auto h-fit w-[min(28rem,calc(100vw-2rem))] rounded-lg bg-white p-6 shadow-xl backdrop:bg-black/40"
+      >
+        <h2 class="text-base font-semibold text-stone-900">Change page address</h2>
+        <.form for={%{}} id="move-page-form" phx-submit="move_page" class="mt-4">
+          <label for="move-page-path" class="block text-sm text-stone-600">New address</label>
+          <div class="mt-2 flex items-center rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm focus-within:border-stone-500 focus-within:bg-white">
+            <span class="shrink-0 text-stone-400">/{@claimed_namespace}/</span>
+            <input
+              id="move-page-path"
+              name="path"
+              value={move_form_value(@pending_move_path, @claimed_namespace)}
+              class="min-w-0 flex-1 bg-transparent text-stone-900 outline-none"
+              autocomplete="off"
+              autofocus
+            />
+          </div>
+          <p class="mt-2 text-xs text-stone-500">Old links will continue to work.</p>
+          <p :if={@move_error} class="mt-2 text-sm text-red-600" role="alert">{@move_error}</p>
+          <div class="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              phx-click="cancel_move"
+              class="rounded-lg px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="rounded-lg bg-stone-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700"
+            >
+              Change address
+            </button>
+          </div>
+        </.form>
+      </dialog>
 
       <dialog
         :if={@pending_delete_path}

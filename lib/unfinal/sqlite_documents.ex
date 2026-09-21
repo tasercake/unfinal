@@ -48,7 +48,8 @@ defmodule Unfinal.SqliteDocuments do
   @spec put(String.t(), String.t(), String.t() | nil, non_neg_integer()) ::
           {:ok, Document.t()} | {:stale, Document.t()} | {:error, term()}
   def put(path, content, nil, 0) do
-    with {:ok, {namespace, relative_path}} <- parts(path) do
+    with :ok <- ensure_writable_path(path),
+         {:ok, {namespace, relative_path}} <- parts(path) do
       now_iso = DateTime.to_iso8601(DateTime.utc_now())
 
       # INSERT or upgrade a placeholder row (revision 0 from touch_page) to revision 1
@@ -67,7 +68,8 @@ defmodule Unfinal.SqliteDocuments do
 
   def put(path, content, _base_etag, base_revision)
       when is_binary(path) and is_integer(base_revision) and base_revision > 0 do
-    with {:ok, {_ns, _rel}} <- parts(path) do
+    with :ok <- ensure_writable_path(path),
+         {:ok, {_ns, _rel}} <- parts(path) do
       now_iso = DateTime.to_iso8601(DateTime.utc_now())
       new_rev = base_revision + 1
 
@@ -99,6 +101,12 @@ defmodule Unfinal.SqliteDocuments do
       when is_binary(namespace) and is_binary(relative_path) and is_binary(updated_at) do
     path = full_path(namespace, relative_path)
 
+    with :ok <- ensure_writable_path(path) do
+      do_touch_page(path, namespace, relative_path, updated_at)
+    end
+  end
+
+  defp do_touch_page(path, namespace, relative_path, updated_at) do
     insert_sql =
       "INSERT INTO documents(path, namespace, relative_path, content, revision, updated_at) " <>
         "VALUES (?1, ?2, ?3, '', 0, ?4) ON CONFLICT(path) DO NOTHING"
@@ -141,7 +149,8 @@ defmodule Unfinal.SqliteDocuments do
   @doc "List most recently edited documents across all namespaces."
   @spec recent_edits(non_neg_integer()) :: [%{path: String.t(), updated_at: String.t()}]
   def recent_edits(limit \\ 20) when is_integer(limit) and limit > 0 do
-    sql = "SELECT path, updated_at FROM documents WHERE updated_at IS NOT NULL ORDER BY updated_at DESC LIMIT ?1"
+    sql =
+      "SELECT path, updated_at FROM documents WHERE updated_at IS NOT NULL ORDER BY updated_at DESC LIMIT ?1"
 
     case query(sql, [limit]) do
       {:ok, %{rows: rows}} ->
@@ -174,6 +183,53 @@ defmodule Unfinal.SqliteDocuments do
     end)
   end
 
+  @doc "Move one document and reserve its old path as a permanent redirect."
+  @spec move(String.t(), String.t()) :: :ok | {:error, term()}
+  def move(source_path, target_path)
+      when is_binary(source_path) and is_binary(target_path) do
+    with {:ok, {namespace, _source_relative_path}} <- parts(source_path),
+         {:ok, {^namespace, target_relative_path}} <- parts(target_path),
+         false <- source_path == target_path do
+      case Repo.transaction(fn ->
+             move_in_transaction(
+               source_path,
+               target_path,
+               namespace,
+               target_relative_path
+             )
+           end) do
+        {:ok, :ok} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      true -> {:error, :same_path}
+      {:ok, {_other_namespace, _relative_path}} -> {:error, :cross_namespace}
+      _other -> {:error, :invalid_path}
+    end
+  end
+
+  def move(_source_path, _target_path), do: {:error, :invalid_path}
+
+  @doc "Resolve a path to a document, permanent redirect, or missing page."
+  @spec resolve_path(String.t()) :: :document | {:redirect, String.t()} | :missing
+  def resolve_path(path) when is_binary(path) do
+    case query("SELECT 1 FROM documents WHERE path = ?1 LIMIT 1", [path]) do
+      {:ok, %{rows: [[1]]}} ->
+        :document
+
+      _other ->
+        case query(
+               "SELECT target_path FROM document_redirects WHERE source_path = ?1 LIMIT 1",
+               [path]
+             ) do
+          {:ok, %{rows: [[target_path]]}} -> {:redirect, target_path}
+          _other -> :missing
+        end
+    end
+  end
+
+  def resolve_path(_path), do: :missing
+
   # ── Private ──────────────────────────────────────────────────────────────────
 
   defp build_doc(path, content, revision, updated_at) do
@@ -183,6 +239,77 @@ defmodule Unfinal.SqliteDocuments do
       |> binary_part(0, 16)
 
     %Document{path: path, content: content, etag: etag, revision: revision, write_id: nil}
+  end
+
+  defp move_in_transaction(source_path, target_path, namespace, target_relative_path) do
+    with :ok <- ensure_source_exists(source_path),
+         :ok <- ensure_destination_available(target_path),
+         :ok <- collapse_redirects(source_path, target_path),
+         :ok <- insert_redirect(source_path, target_path, namespace),
+         :ok <- update_document_path(source_path, target_path, target_relative_path) do
+      :ok
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp ensure_source_exists(path) do
+    case query("SELECT 1 FROM documents WHERE path = ?1 LIMIT 1", [path]) do
+      {:ok, %{rows: [[1]]}} -> :ok
+      {:ok, %{rows: []}} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_writable_path(path) do
+    case query("SELECT 1 FROM document_redirects WHERE source_path = ?1 LIMIT 1", [path]) do
+      {:ok, %{rows: []}} -> :ok
+      {:ok, %{rows: [[1]]}} -> {:error, :path_redirected}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_destination_available(path) do
+    sql =
+      "SELECT 1 FROM documents WHERE path = ?1 " <>
+        "UNION ALL SELECT 1 FROM document_redirects WHERE source_path = ?1 LIMIT 1"
+
+    case query(sql, [path]) do
+      {:ok, %{rows: []}} -> :ok
+      {:ok, %{rows: _rows}} -> {:error, :destination_taken}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp collapse_redirects(source_path, target_path) do
+    case query(
+           "UPDATE document_redirects SET target_path = ?1 WHERE target_path = ?2",
+           [target_path, source_path]
+         ) do
+      {:ok, _result} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp insert_redirect(source_path, target_path, namespace) do
+    sql =
+      "INSERT INTO document_redirects(source_path, target_path, namespace, created_at) " <>
+        "VALUES (?1, ?2, ?3, ?4)"
+
+    case query(sql, [source_path, target_path, namespace, DateTime.to_iso8601(DateTime.utc_now())]) do
+      {:ok, %{num_rows: 1}} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp update_document_path(source_path, target_path, target_relative_path) do
+    sql = "UPDATE documents SET path = ?1, relative_path = ?2 WHERE path = ?3"
+
+    case query(sql, [target_path, target_relative_path, source_path]) do
+      {:ok, %{num_rows: 1}} -> :ok
+      {:ok, %{num_rows: 0}} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp fetch_latest!(path) do
