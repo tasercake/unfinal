@@ -11,13 +11,14 @@ Unfinal is an anti-draft public live-writing tool for publishing text as soon as
 7. A claim page lets authenticated users reserve one namespace.
 8. Namespace sidebars provide a page index for navigating documents.
 9. Namespace owners can delete non-root pages.
-10. The `/live` page lists documents currently being edited and documents edited recently.
-11. Readers receive live document updates without manually refreshing.
-12. Each document shows its live public reader count to readers and its writer.
-13. Writer presence tracks active editing activity for live documents.
-14. Login is powered by Clerk; the current implementation uses Clerk OAuth because the app has no JavaScript frontend framework.
-15. Edits are automatically persisted while the writer types.
-16. Documents are durably stored in SQLite.
-17. Production backups are supported through Litestream to S3/R2-compatible storage.
-18. Deployment automation builds assets, runs migrations, validates backup restore, and restarts services.
-19. CI checks cover tests, migrations, schema consistency, and deployment readiness.
+10. Namespace owners can change non-root page addresses while old addresses keep redirecting.
+11. The `/live` page lists documents currently being edited and documents edited recently.
+12. Readers receive live document updates without manually refreshing.
+13. Each document shows its live public reader count to readers and its writer.
+14. Writer presence tracks active editing activity for live documents.
+15. Login is powered by Clerk; the current implementation uses Clerk OAuth because the app has no JavaScript frontend framework.
+16. Edits are automatically persisted while the writer types.
+17. Documents are durably stored in SQLite.
+18. Production backups are supported through Litestream to S3/R2-compatible storage.
+19. Deployment automation builds assets, runs migrations, validates backup restore, and restarts services.
+20. CI checks cover tests, migrations, schema consistency, and deployment readiness.

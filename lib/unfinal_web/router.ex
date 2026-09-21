@@ -9,6 +9,7 @@ defmodule UnfinalWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug :validate_document_path
+    plug :redirect_moved_document
   end
 
   pipeline :api do
@@ -46,6 +47,32 @@ defmodule UnfinalWeb.Router do
   end
 
   defp validate_document_path(conn, _opts), do: conn
+
+  defp redirect_moved_document(
+         %Plug.Conn{method: method, request_path: "/n/" <> _suffix} = conn,
+         _opts
+       )
+       when method in ["GET", "HEAD"] do
+    storage_path = String.replace_prefix(conn.request_path, "/n", "")
+
+    case Unfinal.Documents.resolve_path(storage_path) do
+      {:redirect, target_path} ->
+        location = append_query_string("/n" <> target_path, conn.query_string)
+
+        conn
+        |> Plug.Conn.put_status(:moved_permanently)
+        |> Phoenix.Controller.redirect(to: location)
+        |> Plug.Conn.halt()
+
+      _other ->
+        conn
+    end
+  end
+
+  defp redirect_moved_document(conn, _opts), do: conn
+
+  defp append_query_string(path, ""), do: path
+  defp append_query_string(path, query_string), do: path <> "?" <> query_string
 
   # Other scopes may use custom stacks.
   # scope "/api", UnfinalWeb do

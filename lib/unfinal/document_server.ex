@@ -161,6 +161,18 @@ defmodule Unfinal.DocumentServer do
     |> schedule_flush(ContentStore.flush_interval_ms())
   end
 
+  defp handle_flush_result(state, {:error, :path_redirected}) do
+    notify_move_if_redirected(state.path)
+
+    %{
+      state
+      | document: ContentStore.missing(state.path),
+        dirty_version: nil,
+        dirty_content: nil,
+        retry_ms: @initial_retry_ms
+    }
+  end
+
   defp handle_flush_result(state, {:error, reason}) do
     Logger.warning("content flush failed for #{state.path}: #{inspect(reason)}")
     retry_later(state)
@@ -186,6 +198,20 @@ defmodule Unfinal.DocumentServer do
         revision: durable_doc.revision,
         write_id: durable_doc.write_id
     }
+  end
+
+  defp notify_move_if_redirected(path) do
+    case Documents.resolve_path(path) do
+      {:redirect, target_path} ->
+        Phoenix.PubSub.broadcast(Unfinal.PubSub, Documents.move_topic(path), {
+          :document_moved,
+          path,
+          target_path
+        })
+
+      _other ->
+        :ok
+    end
   end
 
   defp schedule_flush(%{flush_timer: nil} = state, delay_ms) do
