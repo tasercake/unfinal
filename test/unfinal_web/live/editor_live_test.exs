@@ -656,6 +656,31 @@ defmodule UnfinalWeb.EditorLiveTest do
     assert html =~ "Delete"
   end
 
+  test "open dropdown escapes the transformed kebab stacking context", %{conn: conn} do
+    :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
+    :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
+    conn = logged_in(conn, "owner", "owner@example.com")
+
+    {:ok, view, _html} = live(conn, "/n/alpha")
+
+    html =
+      view
+      |> element("button[phx-click='toggle_page_menu'][phx-value-path='/n/alpha/notes']")
+      |> render_click()
+
+    parsed = Floki.parse_document!(html)
+    assert [_menu] = Floki.find(parsed, "[phx-click-away='close_page_menu']")
+
+    transformed_kebab_wrappers =
+      Floki.find(parsed, "div[class*='-translate-y-1/2']")
+
+    assert transformed_kebab_wrappers != []
+
+    assert Enum.all?(transformed_kebab_wrappers, fn wrapper ->
+             Floki.find(wrapper, "[phx-click-away='close_page_menu']") == []
+           end)
+  end
+
   test "clicking outside closes the kebab menu", %{conn: conn} do
     :ok = NamespaceStore.claim("alpha", %{"id" => "owner", "email" => "owner@example.com"})
     :ok = Unfinal.PageIndex.upsert("alpha", "/notes", ~U[2026-06-24 00:00:00Z])
