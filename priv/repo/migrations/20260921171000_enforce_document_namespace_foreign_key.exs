@@ -7,6 +7,7 @@ defmodule Unfinal.Repo.Migrations.EnforceDocumentNamespaceForeignKey do
       path TEXT PRIMARY KEY,
       namespace TEXT,
       relative_path TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
       content TEXT NOT NULL DEFAULT '',
       revision INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL,
@@ -25,6 +26,7 @@ defmodule Unfinal.Repo.Migrations.EnforceDocumentNamespaceForeignKey do
       path,
       namespace,
       relative_path,
+      title,
       content,
       revision,
       updated_at
@@ -33,6 +35,7 @@ defmodule Unfinal.Repo.Migrations.EnforceDocumentNamespaceForeignKey do
       path,
       CASE WHEN path = '/' THEN NULL ELSE namespace END,
       relative_path,
+      title,
       content,
       revision,
       updated_at
@@ -55,6 +58,7 @@ defmodule Unfinal.Repo.Migrations.EnforceDocumentNamespaceForeignKey do
       path TEXT PRIMARY KEY,
       namespace TEXT NOT NULL,
       relative_path TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
       content TEXT NOT NULL DEFAULT '',
       revision INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
@@ -66,6 +70,7 @@ defmodule Unfinal.Repo.Migrations.EnforceDocumentNamespaceForeignKey do
       path,
       namespace,
       relative_path,
+      title,
       content,
       revision,
       updated_at
@@ -74,6 +79,7 @@ defmodule Unfinal.Repo.Migrations.EnforceDocumentNamespaceForeignKey do
       path,
       CASE WHEN path = '/' THEN '__root__' ELSE namespace END,
       relative_path,
+      title,
       content,
       revision,
       updated_at

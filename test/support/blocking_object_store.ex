@@ -5,7 +5,7 @@ defmodule Unfinal.BlockingObjectStore do
   def get(path), do: Unfinal.FakeObjectStore.get(path)
 
   @impl true
-  def put("/slow", content, base_etag, base_revision) do
+  def put("/slow", title, content, base_etag, base_revision) do
     waiter = self()
     Agent.update(__MODULE__, fn state -> %{state | waiter: waiter} end)
     send(parent(), :slow_put_started)
@@ -17,11 +17,11 @@ defmodule Unfinal.BlockingObjectStore do
     end
 
     Agent.update(__MODULE__, fn state -> %{state | waiter: nil} end)
-    Unfinal.FakeObjectStore.put("/slow", content, base_etag, base_revision)
+    Unfinal.FakeObjectStore.put("/slow", title, content, base_etag, base_revision)
   end
 
-  def put(path, content, base_etag, base_revision) do
-    Unfinal.FakeObjectStore.put(path, content, base_etag, base_revision)
+  def put(path, title, content, base_etag, base_revision) do
+    Unfinal.FakeObjectStore.put(path, title, content, base_etag, base_revision)
   end
 
   def get_object(key), do: Unfinal.FakeObjectStore.get_object(key)

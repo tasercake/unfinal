@@ -9,15 +9,23 @@ defmodule Unfinal.Documents do
 
   alias Unfinal.ContentStore
   alias Unfinal.ContentStore.Document
+  alias Unfinal.DocumentPath
+  alias Unfinal.SqliteDocuments
 
   @topic_prefix "document:"
+  @move_topic_prefix "document-move:"
 
   @type path :: ContentStore.path()
+  @type title :: ContentStore.title()
   @type content :: ContentStore.content()
 
   @spec topic(path()) :: String.t()
   def topic(path),
     do: @topic_prefix <> Base.url_encode64(ContentStore.normalize_path(path), padding: false)
+
+  @spec move_topic(path()) :: String.t()
+  def move_topic(path),
+    do: @move_topic_prefix <> Base.url_encode64(ContentStore.normalize_path(path), padding: false)
 
   @spec edit_topic() :: String.t()
   def edit_topic, do: "edits"
@@ -25,10 +33,32 @@ defmodule Unfinal.Documents do
   @spec get(path()) :: Document.t()
   def get(path), do: path |> ContentStore.normalize_path() |> server_call(:get)
 
-  @spec queue_put(path(), content()) :: :ok
-  def queue_put(path, content) when is_binary(content) do
-    path |> ContentStore.normalize_path() |> server_call({:queue_put, content})
+  @spec queue_put(path(), title(), content()) :: :ok
+  def queue_put(path, title, content) when is_binary(title) and is_binary(content) do
+    path |> ContentStore.normalize_path() |> server_call({:queue_put, title, content})
   end
+
+  @doc "Move one non-root document within its owner's namespace."
+  @spec move(path(), path(), String.t()) :: :ok | {:error, term()}
+  def move(source_path, target_path, user_id)
+      when is_binary(source_path) and is_binary(target_path) and is_binary(user_id) do
+    with :ok <- validate_move_paths(source_path, target_path),
+         {:ok, namespace} <- move_namespace(source_path, target_path),
+         :ok <- authorize_move(namespace, user_id),
+         :ok <- validate_move_roots(source_path, target_path),
+         :ok <- await_durable(source_path),
+         :ok <- stop_server_and_wait(source_path),
+         :ok <- SqliteDocuments.move(source_path, target_path) do
+      :ok = stop_server_and_wait(target_path)
+      broadcast_move(source_path, target_path, namespace)
+    end
+  end
+
+  def move(_source_path, _target_path, _user_id), do: {:error, :invalid_path}
+
+  @doc "Resolve a storage path before serving its document."
+  @spec resolve_path(path()) :: :document | {:redirect, path()} | :missing
+  def resolve_path(path), do: SqliteDocuments.resolve_path(ContentStore.normalize_path(path))
 
   @doc """
   Permanently delete a document. Requires ownership of the document's namespace.
@@ -98,6 +128,61 @@ defmodule Unfinal.Documents do
     end
   end
 
+  defp validate_move_paths(source_path, target_path) do
+    if DocumentPath.valid_relative_path?(source_path) and
+         DocumentPath.valid_relative_path?(target_path),
+       do: :ok,
+       else: {:error, :invalid_path}
+  end
+
+  defp move_namespace(source_path, target_path) do
+    with {:ok, source_namespace} <- extract_namespace(source_path),
+         {:ok, target_namespace} <- extract_namespace(target_path) do
+      if source_namespace == target_namespace,
+        do: {:ok, source_namespace},
+        else: {:error, :cross_namespace}
+    end
+  end
+
+  defp authorize_move(namespace, user_id) do
+    if namespace_owned_by?(namespace, user_id),
+      do: :ok,
+      else: {:error, :not_authorized}
+  end
+
+  defp validate_move_roots(source_path, target_path) do
+    cond do
+      namespace_root?(source_path) -> {:error, :cannot_move_root}
+      namespace_root?(target_path) -> {:error, :cannot_replace_root}
+      true -> :ok
+    end
+  end
+
+  defp await_durable(path, attempts \\ 200)
+  defp await_durable(_path, 0), do: {:error, :flush_timeout}
+
+  defp await_durable(path, attempts) do
+    visible = server_call(path, :get)
+
+    case ContentStore.adapter().get(path) do
+      {:ok, durable}
+      when durable.content == visible.content and durable.revision == visible.revision ->
+        :ok
+
+      {:ok, _durable} ->
+        Process.sleep(25)
+        await_durable(path, attempts - 1)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp stop_server_and_wait(path) do
+    stop_server(path)
+    wait_for_server_stopped(path)
+  end
+
   defp delete_from_store(path) do
     case ContentStore.adapter().get(path) do
       {:ok, doc} ->
@@ -141,10 +226,28 @@ defmodule Unfinal.Documents do
     Phoenix.PubSub.broadcast(Unfinal.PubSub, topic(storage_path), {
       :content_updated,
       storage_path,
-      %{content: "", etag: nil, revision: 0}
+      %{title: "", content: "", etag: nil, revision: 0}
     })
 
     entries = Unfinal.SqliteDocuments.list_namespace(namespace)
+
+    Phoenix.PubSub.broadcast(Unfinal.PubSub, Unfinal.PageIndex.topic(namespace), {
+      :page_index_updated,
+      namespace,
+      entries
+    })
+
+    :ok
+  end
+
+  defp broadcast_move(source_path, target_path, namespace) do
+    Phoenix.PubSub.broadcast(Unfinal.PubSub, move_topic(source_path), {
+      :document_moved,
+      source_path,
+      target_path
+    })
+
+    entries = SqliteDocuments.list_namespace(namespace)
 
     Phoenix.PubSub.broadcast(Unfinal.PubSub, Unfinal.PageIndex.topic(namespace), {
       :page_index_updated,

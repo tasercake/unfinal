@@ -35,9 +35,9 @@ defmodule Unfinal.PageIndexTest do
     assert :ok = PageIndex.upsert("alpha", "/notes", ~U[2026-06-26 00:00:00Z])
 
     assert PageIndex.list("alpha") == [
-             %{path: "/notes", updated_at: "2026-06-26T00:00:00Z"},
-             %{path: "/ideas", updated_at: "2026-06-25T00:00:00Z"},
-             %{path: "/", updated_at: "2026-06-23T00:00:00Z"}
+             %{path: "/notes", title: "", updated_at: "2026-06-26T00:00:00Z"},
+             %{path: "/ideas", title: "", updated_at: "2026-06-25T00:00:00Z"},
+             %{path: "/", title: "", updated_at: "2026-06-23T00:00:00Z"}
            ]
   end
 
@@ -47,7 +47,11 @@ defmodule Unfinal.PageIndexTest do
 
   test "list sees newly upserted entries immediately" do
     assert :ok = PageIndex.upsert("alpha", "/fast", ~U[2026-06-26 00:00:00Z])
-    assert PageIndex.list("alpha") == [%{path: "/fast", updated_at: "2026-06-26T00:00:00Z"}]
+
+    assert PageIndex.list("alpha") == [
+             %{path: "/fast", title: "", updated_at: "2026-06-26T00:00:00Z"}
+           ]
+
     assert PageIndex.list("beta") == []
   end
 

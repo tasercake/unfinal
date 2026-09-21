@@ -17,9 +17,9 @@ defmodule Unfinal.SqliteContentStoreTest do
   end
 
   test "get returns content from SQLite" do
-    SqliteContentStore.put("/test-doc", "hello", nil, 0)
+    SqliteContentStore.put("/test-doc", "Test title", "hello", nil, 0)
 
-    assert {:ok, %Document{content: "hello", revision: 1}} =
+    assert {:ok, %Document{title: "Test title", content: "hello", revision: 1}} =
              SqliteContentStore.get("/test-doc")
   end
 
@@ -29,17 +29,19 @@ defmodule Unfinal.SqliteContentStoreTest do
   end
 
   test "put with invalid base returns error" do
-    result = SqliteContentStore.put("/test-doc", "content", "some-etag", 0)
+    result = SqliteContentStore.put("/test-doc", "Title", "content", "some-etag", 0)
     assert {:error, _} = result
   end
 
   test "revision increments on successive writes" do
-    assert {:ok, %{revision: 1}} = SqliteContentStore.put("/versioned", "v1", nil, 0)
-    assert {:ok, %{revision: 2}} = SqliteContentStore.put("/versioned", "v2", nil, 1)
+    assert {:ok, %{revision: 1}} = SqliteContentStore.put("/versioned", "One", "v1", nil, 0)
+    assert {:ok, %{revision: 2}} = SqliteContentStore.put("/versioned", "Two", "v2", nil, 1)
   end
 
   test "delete removes document" do
-    {:ok, %{etag: etag, revision: rev}} = SqliteContentStore.put("/deleteme", "bye", nil, 0)
+    {:ok, %{etag: etag, revision: rev}} =
+      SqliteContentStore.put("/deleteme", "Delete me", "bye", nil, 0)
+
     assert {:ok, %Document{content: ""}} = SqliteContentStore.delete("/deleteme", etag, rev)
     assert {:ok, %Document{content: "", revision: 0}} = SqliteContentStore.get("/deleteme")
   end

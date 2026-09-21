@@ -7,7 +7,7 @@ defmodule Unfinal.FlakyObjectStore do
   def get(path), do: {:ok, Agent.get(__MODULE__, &Map.get(&1.docs, path, missing(path)))}
 
   @impl true
-  def put(path, content, base_etag, base_revision) do
+  def put(path, title, content, base_etag, base_revision) do
     Agent.get_and_update(__MODULE__, fn state ->
       if state.fail_next? do
         {{:error, :temporary}, %{state | fail_next?: false}}
@@ -17,6 +17,7 @@ defmodule Unfinal.FlakyObjectStore do
         if current.etag == base_etag and current.revision == base_revision do
           doc = %Document{
             path: path,
+            title: title,
             content: content,
             etag: "etag-#{System.unique_integer([:positive])}",
             revision: base_revision + 1,
@@ -70,5 +71,5 @@ defmodule Unfinal.FlakyObjectStore do
     do: Agent.start(fn -> %{docs: %{}, fail_next?: false} end, name: __MODULE__)
 
   defp missing(path),
-    do: %Document{path: path, content: "", etag: nil, revision: 0, write_id: nil}
+    do: %Document{path: path, title: "", content: "", etag: nil, revision: 0, write_id: nil}
 end

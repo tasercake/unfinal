@@ -31,13 +31,13 @@ defmodule Unfinal.SqliteContentStore do
     end
   end
 
-  # ── put/4 ─────────────────────────────────────────────────────────────────────
+  # ── put/5 ─────────────────────────────────────────────────────────────────────
 
   @impl true
-  def put(path, content, base_etag, base_revision) do
+  def put(path, title, content, base_etag, base_revision) do
     normalized = ContentStore.normalize_path(path)
 
-    case SqliteDocuments.put(normalized, content, base_etag, base_revision) do
+    case SqliteDocuments.put(normalized, title, content, base_etag, base_revision) do
       {:ok, %Document{} = doc} ->
         {:ok, doc}
 
@@ -85,6 +85,7 @@ defmodule Unfinal.SqliteContentStore do
     if Mix.env() == :test do
       try do
         Unfinal.Repo.query("DELETE FROM documents", [], timeout: 5_000)
+        Unfinal.Repo.query("DELETE FROM document_redirects", [], timeout: 5_000)
         Unfinal.Repo.query("DELETE FROM namespace_claims", [], timeout: 5_000)
       rescue
         _ -> :ok

@@ -7,7 +7,7 @@ defmodule Unfinal.StaleOnceObjectStore do
   def get(path), do: {:ok, Agent.get(__MODULE__, &Map.get(&1.docs, path, missing(path)))}
 
   @impl true
-  def put(path, content, base_etag, base_revision) do
+  def put(path, title, content, base_etag, base_revision) do
     Agent.get_and_update(__MODULE__, fn state ->
       current = Map.get(state.docs, path, missing(path))
 
@@ -15,6 +15,7 @@ defmodule Unfinal.StaleOnceObjectStore do
         state.stale_next? ->
           latest = %Document{
             path: path,
+            title: "External title",
             content: "external",
             etag: "external-etag",
             revision: 1,
@@ -27,6 +28,7 @@ defmodule Unfinal.StaleOnceObjectStore do
         current.etag == base_etag and current.revision == base_revision ->
           doc = %Document{
             path: path,
+            title: title,
             content: content,
             etag: "etag-#{System.unique_integer([:positive])}",
             revision: base_revision + 1,
@@ -75,5 +77,5 @@ defmodule Unfinal.StaleOnceObjectStore do
     do: Agent.start(fn -> %{docs: %{}, stale_next?: true} end, name: __MODULE__)
 
   defp missing(path),
-    do: %Document{path: path, content: "", etag: nil, revision: 0, write_id: nil}
+    do: %Document{path: path, title: "", content: "", etag: nil, revision: 0, write_id: nil}
 end

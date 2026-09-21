@@ -42,17 +42,23 @@ defmodule UnfinalWeb.EditorLive do
     if connected?(socket) and not writer?,
       do: Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.topic(storage_path))
 
+    if connected?(socket),
+      do: Phoenix.PubSub.subscribe(Unfinal.PubSub, Documents.move_topic(storage_path))
+
     if connected?(socket) and is_binary(viewed_namespace),
       do: Phoenix.PubSub.subscribe(Unfinal.PubSub, PageIndex.topic(viewed_namespace))
 
     document = Documents.get(storage_path)
+    entries = page_entries(viewed_namespace)
 
     socket =
       assign(socket,
         path: path,
         storage_path: storage_path,
+        title: document.title,
         content: document.content,
         saved_content: document.content,
+        page_title: browser_title(document.title),
         etag: document.etag,
         revision: document.revision,
         authenticated: Map.get(session, "authenticated", false),
@@ -64,8 +70,11 @@ defmodule UnfinalWeb.EditorLive do
         reader_count: if(connected?(socket), do: reader_count(reader_topic), else: 0),
         show_claim_link?: show_claim_link?(session, claimed_namespace),
         show_pages_nav?: show_pages_nav?(segments),
-        root_page_path: root_page_path(segments, path, true),
-        page_paths: page_paths(segments, path),
+        root_page_path: root_page_path(segments, path, entries),
+        page_paths: page_paths(segments, path, entries),
+        page_titles: entries |> page_titles(viewed_namespace) |> Map.put(path, document.title),
+        pending_move_path: nil,
+        move_error: nil,
         pending_delete_path: nil,
         menu_open_path: nil,
         mobile_menu_open: false
@@ -77,7 +86,7 @@ defmodule UnfinalWeb.EditorLive do
   @impl true
   def handle_event(
         "save",
-        %{"content" => content},
+        params,
         %{
           assigns: %{
             writer?: true,
@@ -85,8 +94,28 @@ defmodule UnfinalWeb.EditorLive do
           }
         } = socket
       ) do
-    :ok = Documents.queue_put(storage_path, content)
-    {:noreply, socket}
+    title = Map.get(params, "title", Map.get(socket.assigns, :title, ""))
+    content = Map.get(params, "content", socket.assigns.content)
+
+    :ok = Documents.queue_put(storage_path, title, content)
+
+    updated_socket =
+      if Map.has_key?(socket.assigns, :title) do
+        assign(socket,
+          title: title,
+          page_title: browser_title(title),
+          page_titles:
+            Map.put(
+              Map.get(socket.assigns, :page_titles, %{}),
+              Map.get(socket.assigns, :path, storage_path),
+              title
+            )
+        )
+      else
+        socket
+      end
+
+    {:noreply, updated_socket}
   end
 
   def handle_event("save", _params, socket), do: {:noreply, socket}
@@ -97,7 +126,7 @@ defmodule UnfinalWeb.EditorLive do
         %{assigns: %{claimed_namespace: namespace, viewed_namespace: namespace}} = socket
       )
       when is_binary(namespace) do
-    slug = path |> String.trim() |> String.trim_leading("/")
+    slug = path |> String.trim() |> String.trim_leading("/") |> String.replace(" ", "-")
 
     if DocumentPath.valid_segments?([namespace, slug]) do
       {:noreply, push_navigate(socket, to: namespace_path(namespace, slug))}
@@ -107,6 +136,55 @@ defmodule UnfinalWeb.EditorLive do
   end
 
   def handle_event("open_new_page", _params, socket), do: {:noreply, socket}
+
+  def handle_event(
+        "confirm_move",
+        %{"path" => path},
+        %{assigns: %{claimed_namespace: namespace, viewed_namespace: namespace}} = socket
+      )
+      when is_binary(namespace) and is_binary(path) do
+    {:noreply,
+     assign(socket,
+       pending_move_path: path,
+       move_error: nil,
+       menu_open_path: nil
+     )}
+  end
+
+  def handle_event("confirm_move", _params, socket), do: {:noreply, socket}
+
+  def handle_event("cancel_move", _params, socket) do
+    {:noreply, assign(socket, pending_move_path: nil, move_error: nil)}
+  end
+
+  def handle_event(
+        "move_page",
+        %{"path" => relative_path},
+        %{
+          assigns: %{
+            claimed_namespace: namespace,
+            viewed_namespace: namespace,
+            pending_move_path: source_url_path,
+            user: %{"id" => user_id}
+          }
+        } = socket
+      )
+      when is_binary(namespace) and is_binary(source_url_path) and is_binary(relative_path) do
+    with {:ok, target_storage_path} <- move_target_path(namespace, relative_path),
+         source_storage_path <- String.replace_prefix(source_url_path, "/n", ""),
+         :ok <- Documents.move(source_storage_path, target_storage_path, user_id) do
+      target_url_path = "/n" <> target_storage_path
+
+      {:noreply,
+       socket
+       |> put_flash(:info, "Page moved to #{display_page_path(target_url_path)}")
+       |> push_navigate(to: target_url_path)}
+    else
+      {:error, reason} -> {:noreply, assign(socket, move_error: move_error(reason))}
+    end
+  end
+
+  def handle_event("move_page", _params, socket), do: {:noreply, socket}
 
   def handle_event(
         "confirm_delete",
@@ -141,7 +219,8 @@ defmodule UnfinalWeb.EditorLive do
          |> assign(
            pending_delete_path: nil,
            root_page_path: root_page_path_from_entries(namespace, entries),
-           page_paths: page_paths_from_entries(namespace, entries, socket.assigns.path)
+           page_paths: page_paths_from_entries(namespace, entries, socket.assigns.path),
+           page_titles: page_titles(entries, namespace)
          )
          |> push_navigate(to: namespace_path(namespace, "/"))}
 
@@ -181,7 +260,28 @@ defmodule UnfinalWeb.EditorLive do
         {:content_updated, storage_path, %{content: "", etag: nil, revision: 0}},
         %{assigns: %{storage_path: storage_path}} = socket
       ) do
-    {:noreply, assign(socket, content: "", etag: nil, revision: 0)}
+    {:noreply,
+     assign(socket,
+       title: "",
+       content: "",
+       page_title: browser_title(""),
+       page_titles:
+         Map.put(Map.get(socket.assigns, :page_titles, %{}), Map.get(socket.assigns, :path), ""),
+       etag: nil,
+       revision: 0
+     )}
+  end
+
+  def handle_info(
+        {:document_moved, storage_path, target_storage_path},
+        %{assigns: %{storage_path: storage_path}} = socket
+      ) do
+    target_url_path = "/n" <> target_storage_path
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "Page moved to #{display_page_path(target_url_path)}")
+     |> push_navigate(to: target_url_path)}
   end
 
   def handle_info(
@@ -193,12 +293,23 @@ defmodule UnfinalWeb.EditorLive do
   end
 
   def handle_info(
-        {:content_updated, storage_path, %{content: content, etag: etag, revision: revision}},
+        {:content_updated, storage_path,
+         %{content: content, etag: etag, revision: revision} = document},
         %{assigns: %{storage_path: storage_path}} = socket
       ) do
+    title = Map.get(document, :title, Map.get(socket.assigns, :title, ""))
+
     {:noreply,
      assign(socket,
+       title: title,
        content: content,
+       page_title: browser_title(title),
+       page_titles:
+         Map.put(
+           Map.get(socket.assigns, :page_titles, %{}),
+           Map.get(socket.assigns, :path),
+           title
+         ),
        etag: etag,
        revision: revision
      )}
@@ -211,7 +322,8 @@ defmodule UnfinalWeb.EditorLive do
     {:noreply,
      assign(socket,
        root_page_path: root_page_path_from_entries(namespace, entries),
-       page_paths: page_paths_from_entries(namespace, entries, path)
+       page_paths: page_paths_from_entries(namespace, entries, path),
+       page_titles: page_titles(entries, namespace)
      )}
   end
 
@@ -253,19 +365,22 @@ defmodule UnfinalWeb.EditorLive do
   defp viewed_namespace([namespace | _rest]), do: namespace
   defp viewed_namespace([]), do: nil
 
-  defp root_page_path([namespace], _current_path, _connected?), do: namespace_path(namespace, "/")
+  defp page_entries(namespace) when is_binary(namespace), do: PageIndex.list(namespace)
+  defp page_entries(_namespace), do: []
 
-  defp root_page_path([namespace | _rest], _current_path, true) do
-    root_page_path_from_entries(namespace, PageIndex.list(namespace))
+  defp root_page_path([namespace], _current_path, _entries), do: namespace_path(namespace, "/")
+
+  defp root_page_path([namespace | _rest], _current_path, entries) do
+    root_page_path_from_entries(namespace, entries)
   end
 
-  defp root_page_path(_segments, _current_path, _connected?), do: nil
+  defp root_page_path(_segments, _current_path, _entries), do: nil
 
-  defp page_paths([namespace | _rest], current_path) do
-    page_paths_from_entries(namespace, PageIndex.list(namespace), current_path)
+  defp page_paths([namespace | _rest], current_path, entries) do
+    page_paths_from_entries(namespace, entries, current_path)
   end
 
-  defp page_paths(_segments, _current_path), do: []
+  defp page_paths(_segments, _current_path, _entries), do: []
 
   defp root_page_path_from_entries(namespace, entries) do
     if Enum.any?(entries, &(&1.path == "/")), do: namespace_path(namespace, "/")
@@ -279,6 +394,12 @@ defmodule UnfinalWeb.EditorLive do
     |> Enum.reject(&(&1 == root_path))
   end
 
+  defp page_titles(entries, namespace) when is_binary(namespace) do
+    Map.new(entries, fn entry -> {namespace_path(namespace, entry.path), entry.title} end)
+  end
+
+  defp page_titles(_entries, _namespace), do: %{}
+
   defp namespace_path(namespace, "/"), do: "/n/#{namespace}"
 
   defp namespace_path(namespace, path) do
@@ -288,6 +409,20 @@ defmodule UnfinalWeb.EditorLive do
 
   defp display_page_path("/n" <> path), do: path
   defp display_page_path(path), do: path
+
+  defp display_page_title(path, titles) do
+    case titles |> Map.get(path, "") |> String.trim() do
+      "" -> display_page_path(path)
+      title -> title
+    end
+  end
+
+  defp browser_title(title) do
+    case String.trim(title) do
+      "" -> "Unfinal"
+      trimmed -> trimmed
+    end
+  end
 
   @spec reader_topic(String.t()) :: String.t()
   defp reader_topic(storage_path), do: "readers:" <> storage_path
@@ -305,6 +440,28 @@ defmodule UnfinalWeb.EditorLive do
   @spec reader_count_label(non_neg_integer()) :: String.t()
   defp reader_count_label(1), do: "1 person reading"
   defp reader_count_label(count), do: "#{count} people reading"
+
+  defp move_target_path(namespace, path) do
+    relative_path = path |> String.trim() |> String.trim("/")
+    target_path = "/#{namespace}/#{relative_path}"
+
+    if relative_path != "" and DocumentPath.valid_relative_path?(target_path),
+      do: {:ok, target_path},
+      else: {:error, :invalid_path}
+  end
+
+  defp move_form_value("/n/" <> path, namespace) do
+    String.replace_prefix(path, namespace <> "/", "")
+  end
+
+  defp move_form_value(_path, _namespace), do: ""
+
+  defp move_error(:destination_taken), do: "That address is already in use."
+
+  defp move_error(:invalid_path),
+    do: "Use lowercase letters, numbers, hyphens, and /."
+
+  defp move_error(_reason), do: "Could not change address. Try again."
 
   @impl true
   def render(assigns) do
@@ -353,7 +510,7 @@ defmodule UnfinalWeb.EditorLive do
                   ]}
                   href={@root_page_path}
                 >
-                  {display_page_path(@root_page_path)}
+                  {display_page_title(@root_page_path, @page_titles)}
                 </a>
                 <div
                   :if={
@@ -389,7 +546,7 @@ defmodule UnfinalWeb.EditorLive do
                   class="group relative rounded-lg bg-white/70 font-medium text-stone-950 shadow-sm shadow-stone-200/50"
                 >
                   <a href={@path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
-                    {display_page_path(@path)}
+                    {display_page_title(@path, @page_titles)}
                   </a>
                   <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
                     <button
@@ -406,6 +563,13 @@ defmodule UnfinalWeb.EditorLive do
                     phx-click-away="close_page_menu"
                     class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
                   >
+                    <button
+                      phx-click="confirm_move"
+                      phx-value-path={@path}
+                      class="w-full px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50 first:rounded-t-lg"
+                    >
+                      Change address…
+                    </button>
                     <button
                       phx-click="confirm_delete"
                       phx-value-path={@path}
@@ -425,7 +589,7 @@ defmodule UnfinalWeb.EditorLive do
                   ]}
                 >
                   <a href={path} class="block truncate rounded-lg px-3 py-1.5 pr-8">
-                    {display_page_path(path)}
+                    {display_page_title(path, @page_titles)}
                   </a>
                   <div :if={@writer?} class="absolute right-3 top-1/2 -translate-y-1/2">
                     <button
@@ -442,6 +606,13 @@ defmodule UnfinalWeb.EditorLive do
                     phx-click-away="close_page_menu"
                     class="absolute right-3 top-full z-20 mt-1 w-36 rounded-lg border border-stone-200 bg-white shadow-lg"
                   >
+                    <button
+                      phx-click="confirm_move"
+                      phx-value-path={path}
+                      class="w-full px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50 first:rounded-t-lg"
+                    >
+                      Change address…
+                    </button>
                     <button
                       phx-click="confirm_delete"
                       phx-value-path={path}
@@ -503,22 +674,94 @@ defmodule UnfinalWeb.EditorLive do
             as={:editor}
             id="editor-form"
             phx-change="save"
-            class="flex min-h-0 flex-1 overflow-hidden"
+            class="flex min-h-0 flex-1 flex-col overflow-y-auto px-[clamp(2rem,7vw,7rem)] py-10"
           >
+            <input
+              id="document-title-input"
+              name="title"
+              value={@title}
+              maxlength="200"
+              class="w-full shrink-0 border-0 bg-transparent text-left text-4xl font-semibold tracking-tight outline-none placeholder:text-stone-300"
+              placeholder="Untitled"
+              aria-label="Document title"
+            />
             <textarea
               name="content"
-              class="h-full min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-[clamp(2rem,7vw,7rem)] py-10 text-left text-[22px] leading-10 outline-none placeholder:text-stone-300"
+              class="mt-8 min-h-[20rem] w-full flex-1 resize-none border-0 bg-transparent text-left text-[22px] leading-10 outline-none placeholder:text-stone-300"
+              placeholder="Start writing..."
             ><%= @content %></textarea>
           </.form>
 
-          <article
+          <div
             :if={!@writer?}
-            id="readonly-document"
-            class="h-full min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap bg-transparent px-[clamp(2rem,7vw,7rem)] py-10 text-left text-[22px] leading-10"
-            phx-no-format
-          ><%= @content %></article>
+            class="h-full min-h-0 flex-1 overflow-y-auto bg-transparent px-[clamp(2rem,7vw,7rem)] py-10 text-left"
+          >
+            <h1
+              :if={String.trim(@title) != ""}
+              id="document-title"
+              class="text-4xl font-semibold tracking-tight"
+            >
+              {@title}
+            </h1>
+            <article
+              id="readonly-document"
+              class={[
+                "whitespace-pre-wrap text-[22px] leading-10",
+                String.trim(@title) != "" && "mt-8"
+              ]}
+              phx-no-format
+            ><%= @content %></article>
+          </div>
         </main>
       </div>
+
+      <div
+        :if={message = Phoenix.Flash.get(@flash, :info)}
+        class="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-lg bg-stone-900 px-4 py-2 text-sm text-white shadow-lg"
+        role="status"
+      >
+        {message}
+      </div>
+
+      <dialog
+        :if={@pending_move_path}
+        id="move-page-dialog"
+        open
+        class="fixed inset-0 z-50 m-auto h-fit w-[min(28rem,calc(100vw-2rem))] rounded-lg bg-white p-6 shadow-xl backdrop:bg-black/40"
+      >
+        <h2 class="text-base font-semibold text-stone-900">Change page address</h2>
+        <.form for={%{}} id="move-page-form" phx-submit="move_page" class="mt-4">
+          <label for="move-page-path" class="block text-sm text-stone-600">New address</label>
+          <div class="mt-2 flex items-center rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm focus-within:border-stone-500 focus-within:bg-white">
+            <span class="shrink-0 text-stone-400">/{@claimed_namespace}/</span>
+            <input
+              id="move-page-path"
+              name="path"
+              value={move_form_value(@pending_move_path, @claimed_namespace)}
+              class="min-w-0 flex-1 bg-transparent text-stone-900 outline-none"
+              autocomplete="off"
+              autofocus
+            />
+          </div>
+          <p class="mt-2 text-xs text-stone-500">Old links will continue to work.</p>
+          <p :if={@move_error} class="mt-2 text-sm text-red-600" role="alert">{@move_error}</p>
+          <div class="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              phx-click="cancel_move"
+              class="rounded-lg px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="rounded-lg bg-stone-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700"
+            >
+              Change address
+            </button>
+          </div>
+        </.form>
+      </dialog>
 
       <dialog
         :if={@pending_delete_path}

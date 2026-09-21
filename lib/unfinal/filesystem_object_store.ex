@@ -13,8 +13,8 @@ defmodule Unfinal.FilesystemObjectStore do
   def get(path), do: delayed(fn -> do_get(path) end)
 
   @impl true
-  def put(path, content, base_etag, base_revision),
-    do: delayed(fn -> do_put(path, content, base_etag, base_revision) end)
+  def put(path, title, content, base_etag, base_revision),
+    do: delayed(fn -> do_put(path, title, content, base_etag, base_revision) end)
 
   @spec get_object(String.t()) :: {:ok, String.t()} | {:error, term()}
   def get_object(key) when is_binary(key), do: delayed(fn -> do_get_object(key) end)
@@ -42,12 +42,12 @@ defmodule Unfinal.FilesystemObjectStore do
     end
   end
 
-  @spec do_put(String.t(), String.t(), String.t() | nil, non_neg_integer()) ::
+  @spec do_put(String.t(), String.t(), String.t(), String.t() | nil, non_neg_integer()) ::
           {:ok, Document.t()} | {:stale, Document.t()} | {:error, term()}
-  defp do_put(path, content, base_etag, base_revision) do
+  defp do_put(path, title, content, base_etag, base_revision) do
     with {:ok, current} <- do_get(path) do
       if current.etag == base_etag and current.revision == base_revision do
-        write_document(path, content, base_revision + 1)
+        write_document(path, title, content, base_revision + 1)
       else
         {:stale, current}
       end
@@ -97,13 +97,14 @@ defmodule Unfinal.FilesystemObjectStore do
     :ok
   end
 
-  @spec write_document(String.t(), String.t(), pos_integer()) ::
+  @spec write_document(String.t(), String.t(), String.t(), pos_integer()) ::
           {:ok, Document.t()} | {:error, term()}
-  defp write_document(path, content, revision) do
+  defp write_document(path, title, content, revision) do
     doc = %Document{
       path: path,
+      title: title,
       content: content,
-      etag: etag(content, revision),
+      etag: etag(title, content, revision),
       revision: revision,
       write_id: write_id()
     }
@@ -120,18 +121,27 @@ defmodule Unfinal.FilesystemObjectStore do
   @spec decode_document(String.t(), String.t()) :: {:ok, Document.t()} | {:error, term()}
   defp decode_document(path, json) do
     with {:ok, envelope} <- Jason.decode(json),
+         {:ok, title} <- fetch_optional_string(envelope, "title"),
          {:ok, content} <- fetch_string(envelope, "content"),
          {:ok, etag} <- fetch_string(envelope, "etag"),
          {:ok, revision} <- fetch_revision(envelope),
          {:ok, write_id} <- fetch_optional_string(envelope, "write_id") do
       {:ok,
-       %Document{path: path, content: content, etag: etag, revision: revision, write_id: write_id}}
+       %Document{
+         path: path,
+         title: title || "",
+         content: content,
+         etag: etag,
+         revision: revision,
+         write_id: write_id
+       }}
     end
   end
 
   @spec encode_document(Document.t()) :: {:ok, String.t()} | {:error, term()}
   defp encode_document(%Document{} = doc) do
     Jason.encode(%{
+      "title" => doc.title,
       "content" => doc.content,
       "etag" => doc.etag,
       "revision" => doc.revision,
@@ -204,9 +214,9 @@ defmodule Unfinal.FilesystemObjectStore do
   @spec config() :: keyword()
   defp config, do: Application.get_env(:unfinal, :filesystem_object_store, [])
 
-  @spec etag(String.t(), pos_integer()) :: String.t()
-  defp etag(content, revision) do
-    :crypto.hash(:sha256, [content, Integer.to_string(revision), unique()])
+  @spec etag(String.t(), String.t(), pos_integer()) :: String.t()
+  defp etag(title, content, revision) do
+    :crypto.hash(:sha256, [title, content, Integer.to_string(revision), unique()])
     |> Base.encode16(case: :lower)
   end
 
